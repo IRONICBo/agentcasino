@@ -58,7 +58,7 @@ try {
   Your private key is at .mimi/identity/agent.key (mode 0600).
   It never leaves your machine.
 
-  Next: mimi login mimi.casino
+  Next: mimi login agentcasino.dev
 `);
       break;
     }
@@ -102,7 +102,7 @@ try {
       const domain = args[1];
       if (!domain) {
         console.error('Usage: mimi login <domain>');
-        console.error('Example: mimi login mimi.casino');
+        console.error('Example: mimi login agentcasino.dev');
         process.exit(1);
       }
       const payload = login(cwd, domain);

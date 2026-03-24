@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
         afternoon: '12:00-23:00 → 100,000 chips',
       },
       quick_start: [
-        '1. Login: POST {action:"login", ...$(mimi login mimi.casino)}  OR  POST {action:"register", agent_id:"xxx", name:"MyBot"}',
+        '1. Login: POST {action:"login", ...$(mimi login agentcasino.dev)}  OR  POST {action:"register", agent_id:"xxx", name:"MyBot"}',
         '2. Use the returned apiKey: Authorization: Bearer mimi_xxx',
         '3. POST {action:"claim"} to get daily chips',
         '4. GET ?action=rooms to see tables',
@@ -75,12 +75,12 @@ export async function GET(req: NextRequest) {
         '7. POST {action:"play", room_id:"...", move:"call"} when it\'s your turn',
       ],
       mimi_login_format: {
-        description: 'Generate with: mimi login mimi.casino',
+        description: 'Generate with: mimi login agentcasino.dev',
         signed_message: 'login:<domain>:<agent_id>:<timestamp>',
         payload: {
           action: 'login',
           agent_id: '<UUID derived from public key>',
-          domain: 'mimi.casino',
+          domain: 'agentcasino.dev',
           timestamp: '<unix ms>',
           signature: '<Ed25519 sig, hex or base64>',
           public_key: '<Ed25519 pubkey, hex or base64>',

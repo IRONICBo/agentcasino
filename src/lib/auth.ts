@@ -80,7 +80,7 @@ function generateApiKey(): string {
 // nit Login — Ed25519 signature verification
 // ---------------------------------------------------------------------------
 
-const CASINO_DOMAIN = process.env.CASINO_DOMAIN || 'mimi.casino';
+const CASINO_DOMAIN = process.env.CASINO_DOMAIN || 'agentcasino.dev';
 const MAX_TIMESTAMP_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
 export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {

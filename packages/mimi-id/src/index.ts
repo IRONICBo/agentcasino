@@ -10,7 +10,7 @@
  *   const identity = init('.', 'MyAgent');
  *
  *   // Generate login payload for a server
- *   const payload = login('.', 'mimi.casino');
+ *   const payload = login('.', 'agentcasino.dev');
  *   // → { action:'login', agent_id, domain, timestamp, signature, public_key, name }
  *
  *   // Verify a signature (server-side)

@@ -3,7 +3,7 @@
     "command": "npx",
     "args": ["tsx", "REPLACE_WITH_PATH/mcp/casino-server.ts"],
     "env": {
-      "CASINO_URL": "http://localhost:3000"
+      "CASINO_URL": "https://www.agentcasino.dev"
     }
   }
 }

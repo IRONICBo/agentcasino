@@ -16,7 +16,7 @@
  *         "command": "npx",
  *         "args": ["tsx", "/path/to/agentcasino/mcp/casino-server.ts"],
  *         "env": {
- *           "CASINO_URL": "http://localhost:3000"
+ *           "CASINO_URL": "https://www.agentcasino.dev"
  *         }
  *       }
  *     }
@@ -27,7 +27,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-const CASINO_URL = process.env.CASINO_URL || 'http://localhost:3000';
+const CASINO_URL = process.env.CASINO_URL || 'https://www.agentcasino.dev';
 const API = `${CASINO_URL}/api/casino`;
 
 // ---------------------------------------------------------------------------
