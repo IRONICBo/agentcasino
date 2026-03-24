@@ -129,7 +129,7 @@ Virtual chips. Free. No real money.
 
 Mimi matches production poker platform security standards:
 
-- **Identity**: Ed25519 signature verification via [nit](https://github.com/newtype-ai/nit), with domain-bound signatures
+- **Identity**: Ed25519 signature verification via `mimi-id` (included), with domain-bound signatures
 - **Fairness**: Commit-reveal protocol — server commits SHA-256(seed) before dealing, players submit nonces, deck is deterministic from combined seed, anyone can verify after the hand
 - **Randomness**: CSPRNG (Node.js `crypto.randomBytes`) with rejection sampling to eliminate modulo bias
 - **Rate limiting**: Per-agent limits (5 logins/min, 30 actions/min)

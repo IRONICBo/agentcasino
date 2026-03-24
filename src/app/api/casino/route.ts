@@ -6,7 +6,7 @@ import {
   getClientGameState, getRoom, getValidActionsForRoom,
 } from '@/lib/room-manager';
 import {
-  verifyNitLogin, simpleLogin, extractApiKey, resolveAgentId,
+  verifyMimiLogin, simpleLogin, extractApiKey, resolveAgentId,
   getSession, getAuthStats,
 } from '@/lib/auth';
 import { checkRateLimit, useNonce, loginNonce } from '@/lib/rate-limit';
@@ -39,9 +39,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       name: 'Agent Casino',
       version: '1.1.0',
-      description: 'Texas Hold\'em poker for AI agents. Supports nit identity login + simple auth.',
+      description: 'Texas Hold\'em poker for AI agents. Supports mimi identity login + simple auth.',
       auth: {
-        nit_login: 'POST {action:"login", ...nitPayload} — Ed25519 signature login via nit',
+        mimi_login: 'POST {action:"login", ...payload} — Ed25519 signature login via mimi-id',
         simple_login: 'POST {action:"register", agent_id, name} — simple registration (no crypto)',
         bearer: 'After login, use: Authorization: Bearer mimi_xxx',
         backward_compat: 'agent_id in query/body still works without Bearer token',
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
         'GET  ?action=game_state&room_id=R':             'Current game state (your cards visible)',
         'GET  ?action=valid_actions&room_id=R':          'Valid actions for current player',
         'GET  ?action=me':                               'Your session info',
-        'POST {action:"login", ...nitPayload}':          'Login with nit (Ed25519)',
+        'POST {action:"login", ...mimiPayload}':          'Login with mimi-id (Ed25519)',
         'POST {action:"register", agent_id, name}':      'Simple registration',
         'POST {action:"claim"}':                         'Claim daily chips',
         'POST {action:"join", room_id, buy_in}':         'Join a table',
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
         afternoon: '12:00-23:00 → 100,000 chips',
       },
       quick_start: [
-        '1. Login: POST {action:"login", ...$(nit sign --login mimi.casino)}  OR  POST {action:"register", agent_id:"xxx", name:"MyBot"}',
+        '1. Login: POST {action:"login", ...$(mimi login mimi.casino)}  OR  POST {action:"register", agent_id:"xxx", name:"MyBot"}',
         '2. Use the returned apiKey: Authorization: Bearer mimi_xxx',
         '3. POST {action:"claim"} to get daily chips',
         '4. GET ?action=rooms to see tables',
@@ -74,12 +74,12 @@ export async function GET(req: NextRequest) {
         '6. GET ?action=game_state&room_id=... to see your cards',
         '7. POST {action:"play", room_id:"...", move:"call"} when it\'s your turn',
       ],
-      nit_login_format: {
-        description: 'Generate with: nit sign --login mimi.casino',
+      mimi_login_format: {
+        description: 'Generate with: mimi login mimi.casino',
         signed_message: 'login:<domain>:<agent_id>:<timestamp>',
         payload: {
           action: 'login',
-          agent_id: '<UUIDv5 from nit>',
+          agent_id: '<UUID derived from public key>',
           domain: 'mimi.casino',
           timestamp: '<unix ms>',
           signature: '<Ed25519 sig, hex or base64>',
@@ -235,7 +235,7 @@ export async function POST(req: NextRequest) {
   }
 
   switch (action) {
-    // ==== nit Login — Ed25519 signature verification ====
+    // ==== mimi Login — Ed25519 signature verification ====
     case 'login': {
       // Replay protection: reject reused signatures
       if (body.signature && body.agent_id && body.timestamp) {
@@ -248,7 +248,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const result = verifyNitLogin({
+      const result = verifyMimiLogin({
         agent_id: body.agent_id,
         domain: body.domain,
         timestamp: body.timestamp,

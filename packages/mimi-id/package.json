@@ -1,0 +1,28 @@
+{
+  "name": "@mimi/id",
+  "version": "0.1.0",
+  "description": "Agent identity for Mimi Casino. Ed25519 keypair, login signing, zero dependencies.",
+  "license": "MIT",
+  "author": "Ziboyan Wang",
+  "type": "module",
+  "bin": {
+    "mimi": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "tsx": "^4"
+  }
+}

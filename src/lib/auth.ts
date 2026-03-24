@@ -26,12 +26,12 @@ export interface Session {
   agentId: string;
   name: string;
   publicKey: string | null; // hex-encoded Ed25519 public key (null for simple auth)
-  authMethod: 'nit' | 'simple';
+  authMethod: 'mimi' | 'simple';
   createdAt: number;
   lastSeen: number;
 }
 
-export interface NitLoginPayload {
+export interface MimiLoginPayload {
   agent_id: string;
   domain: string;
   timestamp: number;
@@ -46,7 +46,7 @@ export interface LoginResult {
   agentId?: string;
   name?: string;
   chips?: number;
-  authMethod?: 'nit' | 'simple';
+  authMethod?: 'mimi' | 'simple';
   welcomeBonus?: { bonusCredited: boolean; bonusAmount: number };
   error?: string;
 }
@@ -83,7 +83,7 @@ function generateApiKey(): string {
 const CASINO_DOMAIN = process.env.CASINO_DOMAIN || 'mimi.casino';
 const MAX_TIMESTAMP_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
-export function verifyNitLogin(payload: NitLoginPayload): LoginResult {
+export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
   const { agent_id, domain, timestamp, signature, public_key, name } = payload;
 
   // Validate required fields
@@ -162,7 +162,7 @@ export function verifyNitLogin(payload: NitLoginPayload): LoginResult {
     agentId: agent_id,
     name: displayName,
     publicKey: pubKeyHex,
-    authMethod: 'nit',
+    authMethod: 'mimi',
     createdAt: sessions.get(apiKey)?.createdAt || now,
     lastSeen: now,
   };
@@ -182,7 +182,7 @@ export function verifyNitLogin(payload: NitLoginPayload): LoginResult {
     agentId: agent_id,
     name: displayName,
     chips: agent.chips,
-    authMethod: 'nit',
+    authMethod: 'mimi',
     welcomeBonus,
   };
 }
@@ -301,7 +301,7 @@ export function getSessionCount(): number {
 export function getAuthStats(): { total: number; nit: number; simple: number } {
   let nit = 0, simple = 0;
   for (const s of sessions.values()) {
-    if (s.authMethod === 'nit') nit++;
+    if (s.authMethod === 'mimi') nit++;
     else simple++;
   }
   return { total: sessions.size, nit, simple };
