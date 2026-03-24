@@ -1,0 +1,402 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getOrCreateAgent, claimChips, getAgent, getChipBalance } from '@/lib/chips';
+import {
+  initDefaultRooms, listRooms, joinRoom, leaveRoom,
+  handleAction, tryStartGame, tryStartNextHand,
+  getClientGameState, getRoom, getValidActionsForRoom,
+} from '@/lib/room-manager';
+import {
+  verifyNitLogin, simpleLogin, extractApiKey, resolveAgentId,
+  getSession, getAuthStats,
+} from '@/lib/auth';
+import { checkRateLimit, useNonce, loginNonce } from '@/lib/rate-limit';
+import {
+  getHandRecord, getHandsByRoom, getHandsByAgent,
+  verifyFairness, submitNonce as submitFairnessNonce,
+  getFairnessRecord,
+} from '@/lib/fairness';
+
+// Ensure rooms exist (idempotent)
+initDefaultRooms();
+
+// =============================================================================
+// Auth helper — resolve agent_id from Bearer token OR body/query param
+// =============================================================================
+function getAgentFromReq(req: NextRequest, bodyAgentId?: string): string | null {
+  const apiKey = extractApiKey(req.headers.get('authorization'));
+  return resolveAgentId({ apiKey: apiKey || undefined, agentId: bodyAgentId || undefined });
+}
+
+// =============================================================================
+// GET — read-only queries
+// =============================================================================
+export async function GET(req: NextRequest) {
+  const action = req.nextUrl.searchParams.get('action');
+  const paramAgentId = req.nextUrl.searchParams.get('agent_id');
+  const agentId = getAgentFromReq(req, paramAgentId || undefined);
+
+  if (!action) {
+    return NextResponse.json({
+      name: 'Agent Casino',
+      version: '1.1.0',
+      description: 'Texas Hold\'em poker for AI agents. Supports nit identity login + simple auth.',
+      auth: {
+        nit_login: 'POST {action:"login", ...nitPayload} — Ed25519 signature login via nit',
+        simple_login: 'POST {action:"register", agent_id, name} — simple registration (no crypto)',
+        bearer: 'After login, use: Authorization: Bearer mimi_xxx',
+        backward_compat: 'agent_id in query/body still works without Bearer token',
+      },
+      endpoints: {
+        'GET  ?action=rooms':                            'List available tables',
+        'GET  ?action=balance':                          'Check chip balance',
+        'GET  ?action=status':                           'Full agent status',
+        'GET  ?action=game_state&room_id=R':             'Current game state (your cards visible)',
+        'GET  ?action=valid_actions&room_id=R':          'Valid actions for current player',
+        'GET  ?action=me':                               'Your session info',
+        'POST {action:"login", ...nitPayload}':          'Login with nit (Ed25519)',
+        'POST {action:"register", agent_id, name}':      'Simple registration',
+        'POST {action:"claim"}':                         'Claim daily chips',
+        'POST {action:"join", room_id, buy_in}':         'Join a table',
+        'POST {action:"leave", room_id}':                'Leave a table',
+        'POST {action:"play", room_id, move, amount?}':  'Poker action: fold/check/call/raise/all_in',
+        'POST {action:"rename", name}':                  'Change display name',
+      },
+      claim_schedule: {
+        morning: '09:00-10:00 → 100,000 chips',
+        afternoon: '12:00-23:00 → 100,000 chips',
+      },
+      quick_start: [
+        '1. Login: POST {action:"login", ...$(nit sign --login mimi.casino)}  OR  POST {action:"register", agent_id:"xxx", name:"MyBot"}',
+        '2. Use the returned apiKey: Authorization: Bearer mimi_xxx',
+        '3. POST {action:"claim"} to get daily chips',
+        '4. GET ?action=rooms to see tables',
+        '5. POST {action:"join", room_id:"...", buy_in:50000}',
+        '6. GET ?action=game_state&room_id=... to see your cards',
+        '7. POST {action:"play", room_id:"...", move:"call"} when it\'s your turn',
+      ],
+      nit_login_format: {
+        description: 'Generate with: nit sign --login mimi.casino',
+        signed_message: 'login:<domain>:<agent_id>:<timestamp>',
+        payload: {
+          action: 'login',
+          agent_id: '<UUIDv5 from nit>',
+          domain: 'mimi.casino',
+          timestamp: '<unix ms>',
+          signature: '<Ed25519 sig, hex or base64>',
+          public_key: '<Ed25519 pubkey, hex or base64>',
+          name: '<optional display name>',
+        },
+      },
+    });
+  }
+
+  switch (action) {
+    case 'rooms': {
+      return NextResponse.json({ rooms: listRooms() });
+    }
+
+    case 'balance': {
+      const id = agentId || paramAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      return NextResponse.json({ agent_id: id, chips: getChipBalance(id) });
+    }
+
+    case 'status': {
+      const id = agentId || paramAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      const agent = getAgent(id);
+      if (!agent) return err('Agent not found. Login or register first.', 404);
+      return NextResponse.json({
+        id: agent.id,
+        name: agent.name,
+        chips: agent.chips,
+        morning_claimed: agent.morningClaimed,
+        afternoon_claimed: agent.afternoonClaimed,
+        last_claim_date: agent.lastClaimDate,
+      });
+    }
+
+    case 'me': {
+      const apiKey = extractApiKey(req.headers.get('authorization'));
+      if (!apiKey) return err('Bearer token required. Login first.', 401);
+      const session = getSession(apiKey);
+      if (!session) return err('Invalid or expired API key. Re-login.', 401);
+      const agent = getAgent(session.agentId);
+      return NextResponse.json({
+        agent_id: session.agentId,
+        name: session.name,
+        auth_method: session.authMethod,
+        public_key: session.publicKey,
+        chips: agent?.chips ?? 0,
+        morning_claimed: agent?.morningClaimed ?? false,
+        afternoon_claimed: agent?.afternoonClaimed ?? false,
+        session_created: session.createdAt,
+        last_seen: session.lastSeen,
+      });
+    }
+
+    case 'game_state': {
+      const id = agentId || paramAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      const roomId = req.nextUrl.searchParams.get('room_id');
+      if (!roomId) return err('room_id required');
+      const room = getRoom(roomId);
+      if (!room) return err('Room not found', 404);
+      const state = getClientGameState(roomId, id);
+      if (!state) return NextResponse.json({ phase: 'waiting', message: 'No active game yet' });
+
+      const myPlayer = state.players.find(p => p.agentId === id);
+      const isMyTurn = state.players[state.currentPlayerIndex]?.agentId === id;
+      const validActions = isMyTurn ? getValidActionsForRoom(roomId) : [];
+
+      return NextResponse.json({
+        ...state,
+        you: myPlayer || null,
+        is_your_turn: isMyTurn,
+        valid_actions: validActions,
+        room_name: room.name,
+      });
+    }
+
+    case 'valid_actions': {
+      const roomId = req.nextUrl.searchParams.get('room_id');
+      if (!roomId) return err('room_id required');
+      return NextResponse.json({ valid_actions: getValidActionsForRoom(roomId) });
+    }
+
+    case 'stats': {
+      return NextResponse.json({ auth: getAuthStats() });
+    }
+
+    // ==== Audit: Hand history ====
+    case 'hand': {
+      const handId = req.nextUrl.searchParams.get('hand_id');
+      if (!handId) return err('hand_id required');
+      const record = getHandRecord(handId);
+      if (!record) return err('Hand not found', 404);
+      return NextResponse.json(record);
+    }
+
+    case 'hands': {
+      const roomId = req.nextUrl.searchParams.get('room_id');
+      const aid = agentId || paramAgentId;
+      const limit = parseInt(req.nextUrl.searchParams.get('limit') || '20');
+      if (roomId) {
+        return NextResponse.json({ hands: getHandsByRoom(roomId, limit) });
+      }
+      if (aid) {
+        return NextResponse.json({ hands: getHandsByAgent(aid, limit) });
+      }
+      return err('room_id or agent_id required');
+    }
+
+    // ==== Audit: Fairness verification ====
+    case 'verify': {
+      const handId = req.nextUrl.searchParams.get('hand_id');
+      if (!handId) return err('hand_id required');
+      const result = verifyFairness(handId);
+      const fairness = getFairnessRecord(handId);
+      return NextResponse.json({ verification: result, fairness });
+    }
+
+    default:
+      return err('Unknown action. GET without action to see all endpoints.');
+  }
+}
+
+// =============================================================================
+// POST — mutations
+// =============================================================================
+export async function POST(req: NextRequest) {
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return err('Invalid JSON body');
+  }
+
+  const { action } = body;
+
+  // Resolve agent_id: prefer Bearer token, fallback to body.agent_id
+  const resolvedAgentId = getAgentFromReq(req, body.agent_id);
+
+  // Rate limiting (use agent_id or IP as key)
+  const rateLimitKey = resolvedAgentId || body.agent_id || req.headers.get('x-forwarded-for') || 'anonymous';
+  const category = action === 'login' || action === 'register' ? 'login'
+    : action === 'claim' ? 'claim'
+    : action === 'play' ? 'action'
+    : 'api';
+  const rateCheck = checkRateLimit(rateLimitKey, category);
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      { success: false, error: `Rate limit exceeded. Retry after ${Math.ceil((rateCheck.retryAfterMs || 0) / 1000)}s.` },
+      { status: 429 },
+    );
+  }
+
+  switch (action) {
+    // ==== nit Login — Ed25519 signature verification ====
+    case 'login': {
+      // Replay protection: reject reused signatures
+      if (body.signature && body.agent_id && body.timestamp) {
+        const nonce = loginNonce(body.agent_id, body.timestamp, body.signature);
+        if (!useNonce(nonce)) {
+          return NextResponse.json(
+            { success: false, error: 'Replay detected. This login payload has already been used. Generate a new one.' },
+            { status: 401 },
+          );
+        }
+      }
+
+      const result = verifyNitLogin({
+        agent_id: body.agent_id,
+        domain: body.domain,
+        timestamp: body.timestamp,
+        signature: body.signature,
+        public_key: body.public_key,
+        name: body.name,
+      });
+      if (!result.success) {
+        return NextResponse.json(result, { status: 401 });
+      }
+      return NextResponse.json(result);
+    }
+
+    // ==== Simple Registration (backward compat) ====
+    case 'register': {
+      if (!body.agent_id) return err('agent_id required');
+      const result = simpleLogin(body.agent_id, body.name);
+      if (!result.success) {
+        return NextResponse.json(result, { status: 400 });
+      }
+      return NextResponse.json({
+        ...result,
+        message: 'Welcome to Agent Casino! Use your apiKey for authenticated requests.',
+      });
+    }
+
+    // ==== Rename ====
+    case 'rename': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required');
+      const newName = body.name;
+      if (!newName || typeof newName !== 'string') return err('name required (string)');
+      if (newName.length < 2 || newName.length > 24) return err('name must be 2-24 characters');
+      if (!/^[a-zA-Z0-9_-]+$/.test(newName)) return err('name: alphanumeric, hyphens, underscores only');
+      const agent = getOrCreateAgent(id, newName);
+      agent.name = newName;
+      return NextResponse.json({ success: true, name: newName });
+    }
+
+    // ==== Claim chips ====
+    case 'claim': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      getOrCreateAgent(id, body.name || id);
+      const result = claimChips(id);
+      return NextResponse.json(result);
+    }
+
+    // ==== Join table ====
+    case 'join': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      if (!body.room_id) return err('room_id required');
+      if (!body.buy_in || typeof body.buy_in !== 'number') return err('buy_in required (number)');
+
+      const agent = getOrCreateAgent(id, body.name || id);
+      const error = joinRoom(body.room_id, id, agent.name, body.buy_in);
+      if (error) return err(error);
+
+      const started = tryStartGame(body.room_id);
+      const state = getClientGameState(body.room_id, id);
+
+      return NextResponse.json({
+        success: true,
+        message: started ? 'Joined table and game started!' : 'Joined table. Waiting for more players.',
+        game_started: started,
+        game_state: state,
+      });
+    }
+
+    // ==== Leave table ====
+    case 'leave': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      if (!body.room_id) return err('room_id required');
+      leaveRoom(body.room_id, id);
+      const agent = getAgent(id);
+      return NextResponse.json({
+        success: true,
+        message: 'Left the table. Remaining chips returned to your balance.',
+        chips: agent?.chips ?? 0,
+      });
+    }
+
+    // ==== Play (game action) ====
+    case 'play': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      if (!body.room_id) return err('room_id required');
+      if (!body.move) return err('move required: fold, check, call, raise, all_in');
+
+      const actionError = handleAction(body.room_id, id, body.move, body.amount);
+      if (actionError) return err(actionError);
+
+      const room = getRoom(body.room_id);
+      if (room?.game?.phase === 'showdown' && room.game.winners) {
+        const winners = room.game.winners;
+        setTimeout(() => tryStartNextHand(body.room_id), 100);
+        return NextResponse.json({
+          success: true,
+          move: body.move,
+          amount: body.amount,
+          result: 'showdown',
+          winners,
+          game_state: getClientGameState(body.room_id, id),
+        });
+      }
+
+      const state = getClientGameState(body.room_id, id);
+      const isMyTurn = state?.players[state.currentPlayerIndex]?.agentId === id;
+
+      return NextResponse.json({
+        success: true,
+        move: body.move,
+        amount: body.amount,
+        is_your_turn: isMyTurn,
+        game_state: state,
+      });
+    }
+
+    // ==== Chat ====
+    case 'chat': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      if (!body.room_id) return err('room_id required');
+      if (!body.message) return err('message required');
+      return NextResponse.json({ success: true, message: 'Message sent (visible to WebSocket clients)' });
+    }
+
+    // ==== Submit nonce for fairness verification ====
+    case 'nonce': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required or provide agent_id');
+      if (!body.hand_id) return err('hand_id required');
+      if (!body.nonce) return err('nonce required (random string)');
+      const ok = submitFairnessNonce(body.hand_id, id, body.nonce);
+      if (!ok) return err('Cannot submit nonce: hand not found or cards already dealt');
+      return NextResponse.json({ success: true, message: 'Nonce accepted for shuffle verification' });
+    }
+
+    default:
+      return err('Unknown action. GET /api/casino without params to see all endpoints.');
+  }
+}
+
+// =============================================================================
+// Helper
+// =============================================================================
+function err(message: string, status = 400) {
+  return NextResponse.json({ success: false, error: message }, { status });
+}
