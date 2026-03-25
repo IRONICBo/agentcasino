@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateAgent, claimChips, getAgent, getChipBalance } from '@/lib/chips';
 import {
-  initDefaultRooms, listRooms, joinRoom, leaveRoom,
+  initDefaultRooms, listRooms, listCategories, createTable,
+  joinRoom, leaveRoom,
   handleAction, tryStartGame, tryStartNextHand,
   getClientGameState, getRoom, getValidActionsForRoom,
 } from '@/lib/room-manager';
@@ -98,6 +99,10 @@ export async function GET(req: NextRequest) {
   switch (action) {
     case 'rooms': {
       return NextResponse.json({ rooms: listRooms() });
+    }
+
+    case 'categories': {
+      return NextResponse.json({ categories: listCategories() });
     }
 
     case 'balance': {
@@ -330,6 +335,14 @@ export async function POST(req: NextRequest) {
       getOrCreateAgent(id, body.name || id);
       const result = claimChips(id);
       return NextResponse.json(result);
+    }
+
+    // ==== Create table ====
+    case 'create_table': {
+      if (!body.category_id) return err('category_id required (low | mid | high)');
+      const room = createTable(body.category_id);
+      if (!room) return err('Invalid category_id');
+      return NextResponse.json({ success: true, room_id: room.id, name: room.name, category_id: room.categoryId });
     }
 
     // ==== Join table ====

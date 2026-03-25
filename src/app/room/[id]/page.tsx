@@ -41,7 +41,6 @@ function RoomPageInner() {
 
     socket.on('connect', () => {
       if (spectateParam) {
-        // Join as spectator immediately
         socket.emit('room:watch', { roomId });
       } else {
         socket.emit('chips:claim', { agentId: id });
@@ -94,7 +93,7 @@ function RoomPageInner() {
         }
       } catch {}
     };
-    poll(); // immediate first fetch
+    poll();
     const interval = setInterval(poll, 1200);
     return () => clearInterval(interval);
   }, [spectating, roomId]);
@@ -137,6 +136,144 @@ function RoomPageInner() {
     router.push('/');
   }, [roomId, router, spectating]);
 
+  if (!joined) {
+    /* ── Entry screen (editorial style) ── */
+    return (
+      <div className="min-h-screen flex flex-col items-center" style={{ padding: '2rem' }}>
+        {/* Header */}
+        <header className="w-full max-w-[1200px] flex justify-between items-center mb-16" style={{ fontSize: '.85rem' }}>
+          <div className="flex items-center gap-3">
+            <a href="/" className="font-serif italic text-lg font-medium hover:opacity-70 transition-opacity">
+              Agent Casino
+            </a>
+            <span style={{ color: 'var(--ink-light)' }}>/</span>
+            <span className="font-mono text-sm" style={{ color: 'var(--ink-light)' }}>{roomName || 'Table'}</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="font-mono text-xs" style={{ color: 'var(--ink-light)' }}>{agentName}</span>
+            <span className="font-mono text-xs font-medium">{chips.toLocaleString()} chips</span>
+          </div>
+        </header>
+
+        {/* Card */}
+        <main className="w-full max-w-[1200px] bg-white border border-[var(--border)] grid grid-cols-1 lg:grid-cols-2">
+          {/* Left: table info */}
+          <div className="p-10 lg:p-16 flex flex-col lg:border-r border-[var(--border)]">
+            <h1
+              className="font-serif italic font-normal leading-[0.95] tracking-[-0.03em] mb-8"
+              style={{ fontSize: 'clamp(2.5rem, 4vw, 4rem)' }}
+            >
+              {roomName || 'Poker Table'}
+            </h1>
+            <p className="text-sm leading-relaxed mb-10" style={{ color: 'var(--ink-light)', maxWidth: '32rem' }}>
+              Watch the action unfold live, or take a seat and play with virtual chips.
+              All games are Texas Hold&apos;em, no-limit.
+            </p>
+
+            {gameState && (
+              <div className="flex flex-col gap-3 mb-10">
+                <span className="font-mono text-xs tracking-[0.12em] uppercase" style={{ color: 'var(--ink-light)', fontSize: '.72rem' }}>
+                  Current Hand
+                </span>
+                <div className="flex gap-6">
+                  <div>
+                    <span className="font-mono text-xs block" style={{ color: 'var(--ink-light)' }}>PHASE</span>
+                    <span className="font-mono text-sm font-medium">{gameState.phase.toUpperCase()}</span>
+                  </div>
+                  <div>
+                    <span className="font-mono text-xs block" style={{ color: 'var(--ink-light)' }}>PLAYERS</span>
+                    <span className="font-mono text-sm font-medium">{gameState.players.length}</span>
+                  </div>
+                  <div>
+                    <span className="font-mono text-xs block" style={{ color: 'var(--ink-light)' }}>POT</span>
+                    <span className="font-mono text-sm font-medium">{gameState.pot.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Room picker */}
+            <div className="mt-auto">
+              <span className="font-mono text-xs tracking-[0.12em] uppercase block mb-3" style={{ color: 'var(--ink-light)', fontSize: '.72rem' }}>
+                Other Tables
+              </span>
+              <div className="flex flex-col gap-1">
+                {allRooms.filter(r => r.id !== roomId).slice(0, 4).map(r => (
+                  <a
+                    key={r.id}
+                    href={`/room/${r.id}?spectate=1`}
+                    className="flex items-center justify-between border border-[var(--border)] px-3 py-2 text-xs hover:bg-[var(--bg-page)] transition-colors"
+                    style={{ color: 'var(--ink)' }}
+                  >
+                    <span className="font-mono">{r.name}</span>
+                    <span className="font-mono" style={{ color: 'var(--ink-light)' }}>{r.playerCount} players</span>
+                  </a>
+                ))}
+                {allRooms.filter(r => r.id !== roomId).length === 0 && (
+                  <span className="text-xs" style={{ color: 'var(--ink-light)' }}>No other tables open.</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Watch or Join */}
+          <div className="bg-[var(--bg-page)] p-10 lg:p-16 flex flex-col justify-center">
+            <span className="font-mono text-xs tracking-[0.12em] uppercase mb-6 block" style={{ color: 'var(--ink-light)', fontSize: '.72rem' }}>
+              Choose Your Role
+            </span>
+
+            {/* Watch */}
+            <button
+              onClick={handleWatch}
+              className="w-full border border-[var(--border)] bg-white py-4 font-sans text-sm cursor-pointer transition-all hover:shadow-[2px_2px_0_var(--ink)] mb-4 flex items-center justify-center gap-2"
+              style={{ color: 'var(--ink)' }}
+            >
+              <div className="status-dot" style={{ width: 6, height: 6 }} />
+              Watch Live
+            </button>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3 my-6">
+              <div className="flex-1 h-px bg-[var(--border)]" />
+              <span className="text-xs font-mono" style={{ color: 'var(--ink-light)' }}>or play</span>
+              <div className="flex-1 h-px bg-[var(--border)]" />
+            </div>
+
+            {/* Buy-in */}
+            <div className="mb-8">
+              <label className="font-mono block mb-3" style={{ fontSize: '.72rem', color: 'var(--ink-light)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
+                Buy-in Amount
+              </label>
+              <input
+                type="range" min={20000} max={Math.min(200000, chips)} step={10000}
+                value={buyIn} onChange={e => setBuyIn(Number(e.target.value))}
+                className="w-full accent-[var(--ink)] mb-3"
+              />
+              <div className="text-3xl font-mono font-medium text-center mb-1">{buyIn.toLocaleString()}</div>
+              <div className="text-xs font-mono text-center" style={{ color: 'var(--ink-light)' }}>
+                Balance: {chips.toLocaleString()}
+              </div>
+            </div>
+
+            <button
+              onClick={handleJoin}
+              disabled={chips < buyIn}
+              className="w-full border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] py-4 font-sans text-sm font-medium cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-30 disabled:cursor-default"
+            >
+              {chips < buyIn ? 'Insufficient Chips' : 'Take a Seat'}
+            </button>
+          </div>
+        </main>
+
+        <footer className="w-full max-w-[1200px] flex justify-between text-xs mt-8 pt-4" style={{ color: 'var(--ink-light)' }}>
+          <span>Agent Casino — Virtual chips only. No real money.</span>
+          <span className="font-mono">v1.1.0</span>
+        </footer>
+      </div>
+    );
+  }
+
+  /* ── Game Room (dark poker table) ── */
   return (
     <div className="min-h-screen game-room">
       {/* ── Header ── */}
@@ -213,74 +350,27 @@ function RoomPageInner() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {!joined ? (
-          /* ── Lobby: Watch or Join ── */
-          <div className="flex items-center justify-center min-h-[75vh]">
-            <div className="w-full max-w-md bg-[#1a1a1a] border border-gray-700 p-10">
-              <h2 className="text-2xl font-serif italic text-white mb-2">
-                {roomName || 'Poker Table'}
-              </h2>
-              <p className="text-sm text-gray-500 mb-8">Watch the action or take a seat</p>
-
-              {/* Watch button */}
-              <button
-                onClick={handleWatch}
-                className="w-full border border-gray-600 text-gray-300 py-3 font-sans text-sm cursor-pointer transition-opacity hover:opacity-80 mb-4"
-              >
-                Watch Live
-              </button>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3 my-6">
-                <div className="flex-1 h-px bg-gray-800" />
-                <span className="text-gray-600 text-xs font-mono">or play</span>
-                <div className="flex-1 h-px bg-gray-800" />
-              </div>
-
-              {/* Buy-in */}
-              <div className="mb-8">
-                <label className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500 block mb-3">Buy-in</label>
-                <input
-                  type="range" min={20000} max={Math.min(200000, chips)} step={10000}
-                  value={buyIn} onChange={e => setBuyIn(Number(e.target.value))}
-                  className="w-full accent-emerald-500 mb-3"
-                />
-                <div className="text-3xl font-mono font-medium text-white text-center">{buyIn.toLocaleString()}</div>
-                <div className="text-xs text-gray-600 text-center mt-2">Balance: {chips.toLocaleString()}</div>
-              </div>
-
-              <button
-                onClick={handleJoin} disabled={chips < buyIn}
-                className="w-full border border-white bg-white text-[#111] py-3 font-sans text-sm font-medium cursor-pointer transition-opacity hover:opacity-88 disabled:opacity-30 disabled:cursor-default"
-              >
-                {chips < buyIn ? 'Insufficient Chips' : 'Take a Seat'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* ── Game Room ── */
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
-            <div className="pt-4 pb-24">
-              {gameState ? (
-                <PokerTable
-                  gameState={gameState}
-                  myAgentId={spectating ? '__spectator__' : agentId}
-                  onAction={spectating ? () => {} : handleAction}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-96 text-center">
-                  <div>
-                    <p className="text-gray-400 mb-1">Waiting for players…</p>
-                    <p className="text-xs text-gray-600">Need at least 2 to start</p>
-                  </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+          <div className="pt-4 pb-24">
+            {gameState ? (
+              <PokerTable
+                gameState={gameState}
+                myAgentId={spectating ? '__spectator__' : agentId}
+                onAction={spectating ? () => {} : handleAction}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-96 text-center">
+                <div>
+                  <p className="text-gray-400 mb-1">Waiting for players…</p>
+                  <p className="text-xs text-gray-600">Need at least 2 to start</p>
                 </div>
-              )}
-            </div>
-            <div className="h-[600px] lg:h-[calc(100vh-6rem)]">
-              <ChatBox messages={messages} onSend={spectating ? undefined : handleChat} />
-            </div>
+              </div>
+            )}
           </div>
-        )}
+          <div className="h-[600px] lg:h-[calc(100vh-6rem)]">
+            <ChatBox messages={messages} onSend={spectating ? undefined : handleChat} />
+          </div>
+        </div>
       </main>
     </div>
   );
@@ -288,7 +378,7 @@ function RoomPageInner() {
 
 export default function RoomPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen game-room flex items-center justify-center"><span className="text-gray-500 font-mono text-sm">Loading…</span></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-page)' }}><span className="font-mono text-sm" style={{ color: 'var(--ink-light)' }}>Loading…</span></div>}>
       <RoomPageInner />
     </Suspense>
   );
