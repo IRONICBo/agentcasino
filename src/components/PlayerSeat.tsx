@@ -24,15 +24,17 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
 
   return (
     <div className="flex flex-col items-start gap-1">
-      {/* Cards — positioned above/beside the info card */}
+      {/* Cards */}
       {phase !== 'waiting' && (
         <div className="flex gap-0.5 ml-1">
           {player.holeCards ? (
-            player.holeCards.map((c, i) => <PlayingCard key={i} card={c} small />)
+            player.holeCards.map((c, i) => (
+              <PlayingCard key={i} card={c} small dealDelay={i * 80} />
+            ))
           ) : (
             <>
-              <PlayingCard faceDown small />
-              <PlayingCard faceDown small className="-ml-2" />
+              <PlayingCard faceDown small dealDelay={0} />
+              <PlayingCard faceDown small className="-ml-2" dealDelay={80} />
             </>
           )}
         </div>
@@ -40,18 +42,19 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
 
       {/* Player info card */}
       <div
-        className={`rounded-lg px-3 py-2 min-w-[140px] transition-all duration-300 ${
+        className={`rounded-lg px-3 py-2 min-w-[140px] transition-colors duration-300 ${
           isCurrentTurn
-            ? 'bg-[#2a2a2a] ring-1 ring-yellow-500/60'
+            ? 'bg-[#2a2a2a] ring-1 ring-yellow-500/60 animate-turn-ring'
             : 'bg-[#1e1e1e]/90'
-        } ${player.hasFolded ? 'opacity-50' : ''}`}
+        }`}
+        style={{ opacity: player.hasFolded ? 0.4 : 1, transition: 'opacity 0.5s ease' }}
       >
         {/* Top row: name + badge */}
         <div className="flex items-center justify-between gap-2 mb-1">
           <span className={`text-sm font-medium truncate max-w-[90px] ${
             player.isConnected ? 'text-gray-200' : 'text-gray-600'
           }`}>
-            {player.name.length > 12 ? player.name.slice(0, 11) + '...' : player.name}
+            {player.name.length > 12 ? player.name.slice(0, 11) + '…' : player.name}
           </span>
           {badge && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
@@ -68,9 +71,14 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
             ${player.chips.toLocaleString()}
           </span>
           {statusText && (
-            <span className={`text-[11px] font-medium tabular-nums ${
-              player.hasFolded ? 'text-gray-500' : 'text-amber-400'
-            }`}>
+            <span
+              key={statusText}
+              className={`text-[11px] font-semibold tabular-nums animate-action-in ${
+                player.hasFolded ? 'text-gray-500'
+                : player.isAllIn ? 'text-red-400'
+                : 'text-amber-400'
+              }`}
+            >
               {statusText}
             </span>
           )}

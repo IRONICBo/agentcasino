@@ -12,9 +12,10 @@ const suitColors: Record<string, string> = {
 };
 
 export function PlayingCard({
-  card, faceDown, small, className = '',
+  card, faceDown, small, className = '', dealDelay = 0,
 }: {
-  card?: Card | null; faceDown?: boolean; small?: boolean; className?: string;
+  card?: Card | null; faceDown?: boolean; small?: boolean;
+  className?: string; dealDelay?: number;
 }) {
   const w = small ? 'w-9' : 'w-[52px]';
   const h = small ? 'h-13' : 'h-[72px]';
@@ -22,13 +23,19 @@ export function PlayingCard({
   // Face-down: dark navy card back
   if (!card || faceDown) {
     return (
-      <div className={`${w} ${h} rounded-md bg-[#2a3a5c] border border-[#3d506e]/60 shadow-md ${className}`} />
+      <div
+        className={`${w} ${h} rounded-md bg-[#2a3a5c] border border-[#3d506e]/60 shadow-md animate-deal ${className}`}
+        style={{ animationDelay: `${dealDelay}ms` }}
+      />
     );
   }
 
-  // Face-up: white card
+  // Face-up: white card with flip reveal
   return (
-    <div className={`${w} ${h} rounded-md bg-white border border-gray-300 shadow-md relative overflow-hidden ${className}`}>
+    <div
+      className={`${w} ${h} rounded-md bg-white border border-gray-300 shadow-md relative overflow-hidden animate-flip ${className}`}
+      style={{ animationDelay: `${dealDelay}ms` }}
+    >
       <div className={`absolute top-0.5 left-1 flex flex-col items-center leading-none ${suitColors[card.suit]}`}>
         <span className={`${small ? 'text-[9px]' : 'text-[11px]'} font-bold`}>{card.rank}</span>
         <span className={`${small ? 'text-[7px]' : 'text-[9px]'} -mt-px`}>{suitSymbols[card.suit]}</span>

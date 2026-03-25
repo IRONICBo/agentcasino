@@ -62,7 +62,7 @@ export function ChatBox({ messages, onSend }: ChatBoxProps) {
       <div className="px-4 py-2.5 flex items-center gap-2 border-b border-white/5">
         {/* Live indicator */}
         <div className="relative flex items-center justify-center">
-          <div className="w-2 h-2 rounded-full bg-red-500 animate-live-pulse" />
+          <div className="w-2 h-2 rounded-full bg-red-500" style={{ animation: 'live-pulse 1.8s ease-in-out infinite' }} />
         </div>
         <h3
           className="text-xs font-bold uppercase tracking-[0.15em]"

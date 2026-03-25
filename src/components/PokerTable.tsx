@@ -3,7 +3,7 @@
 import { ClientGameState, PlayerAction } from '@/lib/types';
 import { PlayerSeat } from './PlayerSeat';
 import { PlayingCard } from './PlayingCard';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 /**
  * Seat positions for up to 9 players, distributed around a large oval.
@@ -35,6 +35,26 @@ interface PokerTableProps {
 export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) {
   const [raiseAmount, setRaiseAmount] = useState(gameState.bigBlind * 2);
 
+  // Track phase changes for re-animation
+  const prevPhaseRef = useRef(gameState.phase);
+  const [phaseKey, setPhaseKey] = useState(0);
+  useEffect(() => {
+    if (gameState.phase !== prevPhaseRef.current) {
+      prevPhaseRef.current = gameState.phase;
+      setPhaseKey(k => k + 1);
+    }
+  }, [gameState.phase]);
+
+  // Track pot changes for pulse
+  const prevPotRef = useRef(gameState.pot);
+  const [potKey, setPotKey] = useState(0);
+  useEffect(() => {
+    if (gameState.pot !== prevPotRef.current) {
+      prevPotRef.current = gameState.pot;
+      setPotKey(k => k + 1);
+    }
+  }, [gameState.pot]);
+
   const myPlayer = gameState.players.find(p => p.agentId === myAgentId);
   const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.agentId === myAgentId;
   const highestBet = Math.max(...gameState.players.map(p => p.currentBet), 0);
@@ -64,14 +84,17 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
         {/* Center content */}
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
           {/* Phase label */}
-          <span className="text-[11px] font-semibold text-amber-400/80 uppercase tracking-[0.25em]">
+          <span
+            key={phaseKey}
+            className="text-[11px] font-semibold text-amber-400/80 uppercase tracking-[0.25em] animate-phase-flash"
+          >
             {phaseLabels[gameState.phase] || gameState.phase}
           </span>
 
-          {/* Community cards */}
+          {/* Community cards — staggered deal */}
           <div className="flex gap-2">
             {gameState.communityCards.map((card, i) => (
-              <PlayingCard key={i} card={card} />
+              <PlayingCard key={`${gameState.id}-${i}`} card={card} dealDelay={i * 120} />
             ))}
             {Array.from({ length: 5 - gameState.communityCards.length }).map((_, i) => (
               <div
@@ -84,7 +107,10 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
           {/* Pot */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-gray-400 uppercase tracking-wider">Pot</span>
-            <span className="text-sm font-bold font-mono text-amber-400 tabular-nums">
+            <span
+              key={potKey}
+              className="text-sm font-bold font-mono text-amber-400 tabular-nums animate-chip-pulse"
+            >
               ${gameState.pot.toLocaleString()}
             </span>
           </div>
@@ -119,15 +145,16 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
       {/* ── Winners overlay ── */}
       {gameState.winners && gameState.winners.length > 0 && (
         <div className="absolute inset-0 flex items-center justify-center z-20">
-          <div className="absolute inset-0 bg-black/50 rounded-3xl" />
-          <div className="relative bg-[#1a1a1a] border border-gray-700 rounded-xl px-8 py-6 text-center z-30 shadow-2xl">
+          <div className="absolute inset-0 bg-black/60 rounded-3xl" style={{ animation: 'fade-up 0.3s ease both' }} />
+          <div className="relative bg-[#1a1a1a] border border-gray-600 rounded-xl px-10 py-7 text-center z-30 shadow-2xl animate-winner-pop">
+            <div className="text-amber-400/60 text-[10px] font-mono uppercase tracking-[0.2em] mb-4">Winner</div>
             {gameState.winners.map((w, i) => (
-              <div key={i} className="mb-2 last:mb-0">
-                <div className="text-white font-bold text-lg">{w.name}</div>
-                <div className="text-emerald-400 font-mono font-bold text-xl">
+              <div key={i} className="mb-3 last:mb-0" style={{ animationDelay: `${i * 80}ms` }}>
+                <div className="text-white font-bold text-xl mb-0.5">{w.name}</div>
+                <div className="text-emerald-400 font-mono font-bold text-2xl tracking-tight">
                   +${w.amount.toLocaleString()}
                 </div>
-                <div className="text-gray-500 text-xs mt-0.5">{w.hand.description}</div>
+                <div className="text-gray-500 text-xs mt-1.5 font-mono">{w.hand.description}</div>
               </div>
             ))}
           </div>

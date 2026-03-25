@@ -209,8 +209,8 @@ export default function LobbyPage() {
           </div>
 
           <div className="flex flex-col gap-8 flex-1 overflow-y-auto">
-            {categories.map(cat => (
-              <div key={cat.id}>
+            {categories.map((cat, ci) => (
+              <div key={cat.id} className="animate-fade-up" style={{ animationDelay: `${ci * 80}ms` }}>
                 {/* Category header */}
                 <div className="mb-3">
                   <h3 className="font-serif italic text-base font-medium">{cat.name}</h3>
@@ -228,13 +228,14 @@ export default function LobbyPage() {
                     >
                       No tables open — create one to start a game.
                     </div>
-                  ) : cat.tables.map(room => {
+                  ) : cat.tables.map((room, ri) => {
                     const hasPlayers = room.playerCount > 0;
                     const isFull = room.playerCount >= room.maxPlayers;
                     return (
                       <div
                         key={room.id}
-                        className="bg-white border border-[var(--border)] px-4 py-3 flex items-center gap-3 transition-shadow hover:shadow-[2px_2px_0_var(--ink)]"
+                        className="bg-white border border-[var(--border)] px-4 py-3 flex items-center gap-3 transition-shadow hover:shadow-[2px_2px_0_var(--ink)] animate-row-in"
+                        style={{ animationDelay: `${ci * 80 + ri * 35}ms` }}
                       >
                         {/* Status dot + name */}
                         <div className="flex items-center gap-2 flex-1 min-w-0">
