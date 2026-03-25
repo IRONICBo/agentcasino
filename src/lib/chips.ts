@@ -136,3 +136,7 @@ export function addChips(agentId: string, amount: number): void {
 export function getAllAgents(): Agent[] {
   return Array.from(agents.values());
 }
+
+export function listAgents(): Agent[] {
+  return Array.from(agents.values());
+}

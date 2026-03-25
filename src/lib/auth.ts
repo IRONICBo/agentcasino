@@ -171,7 +171,6 @@ export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
   // Welcome bonus for first-time agents (if they have 0 chips)
   let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
   if (agent.chips === 0 && agent.createdAt >= now - 5000) {
-    // Brand new agent — give a small welcome bonus
     agent.chips += 10_000;
     welcomeBonus = { bonusCredited: true, bonusAmount: 10_000 };
   }

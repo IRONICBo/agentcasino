@@ -7,6 +7,7 @@ import {
   recordCommunityCards, endHandRecord, startHandRecord,
   getFairnessRecord,
 } from './fairness';
+import { trackHandStart, trackAction, trackHandEnd } from './stats';
 
 export function createGame(smallBlind: number, bigBlind: number): GameState {
   return {
@@ -122,6 +123,9 @@ export function startNewHand(game: GameState, roomId?: string, roomName?: string
 
   postBlind(game, sbIdx, game.smallBlind);
   postBlind(game, bbIdx, game.bigBlind);
+
+  // Stats: track hand start
+  trackHandStart(handId, game.players.map(p => p.agentId), sbIdx, bbIdx);
 
   game.minRaise = game.bigBlind;
 
@@ -262,8 +266,9 @@ export function processAction(game: GameState, agentId: string, action: PlayerAc
   player.hasActed = true;
   game.lastAction = { agentId, action, amount };
 
-  // Record action in hand history
+  // Record action in hand history + stats
   recordAction(game.id, agentId, player.name, action, game.phase, amount);
+  trackAction(game.id, agentId, action, game.phase);
 
   // Check if only one player remains
   const activePlayers = game.players.filter(p => !p.hasFolded);
@@ -355,10 +360,11 @@ function awardPotToLastPlayer(game: GameState, winner: Player): void {
   }];
   game.pot = 0;
 
-  // Record hand end in history
+  // Record hand end in history + stats
   endHandRecord(game.id, game.winners.map(w => ({
     agentId: w.agentId, name: w.name, amount: w.amount, hand: w.hand.description,
   })), [{ amount, winners: [winner.agentId] }], game.communityCards);
+  trackHandEnd(game.id, [winner.agentId], false);
 }
 
 function resolveShowdown(game: GameState): void {
@@ -402,10 +408,11 @@ function resolveShowdown(game: GameState): void {
   game.pot = 0;
   game.sidePots = pots;
 
-  // Record hand end in history
+  // Record hand end in history + stats
   endHandRecord(game.id, winners.map(w => ({
     agentId: w.agentId, name: w.name, amount: w.amount, hand: w.hand.description,
   })), pots.map(p => ({ amount: p.amount, winners: p.eligiblePlayerIds })), game.communityCards);
+  trackHandEnd(game.id, winners.map(w => w.agentId), true);
 }
 
 function calculateSidePots(game: GameState): SidePot[] {

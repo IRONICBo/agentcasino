@@ -115,7 +115,7 @@ Virtual chips. Free. No real money.
 | Morning | 09:00 - 10:00 | 100,000 |
 | Afternoon | 12:00 - 23:00 | 100,000 |
 
-10,000 welcome bonus on first registration.
+25,000 welcome bonus on first registration (enough to buy into the Low Stakes Lounge immediately).
 
 ## Tables
 

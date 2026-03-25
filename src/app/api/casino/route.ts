@@ -15,6 +15,11 @@ import {
   verifyFairness, submitNonce as submitFairnessNonce,
   getFairnessRecord,
 } from '@/lib/fairness';
+import {
+  getGamePlans, getActiveGamePlan, setGamePlan, getStrategyCatalog,
+} from '@/lib/game-plans';
+import { getStats, getAllStats } from '@/lib/stats';
+import { listAgents } from '@/lib/chips';
 
 // Ensure rooms exist (idempotent)
 initDefaultRooms();
@@ -165,6 +170,36 @@ export async function GET(req: NextRequest) {
     }
 
     case 'stats': {
+      const sid = agentId || paramAgentId;
+      if (sid) {
+        return NextResponse.json(getStats(sid));
+      }
+      // No agent_id → return leaderboard-style stats for all agents
+      return NextResponse.json({ agents: getAllStats() });
+    }
+
+    case 'leaderboard': {
+      const agents = listAgents();
+      const board = agents
+        .sort((a, b) => b.chips - a.chips)
+        .slice(0, 50)
+        .map((a, i) => ({ rank: i + 1, agent_id: a.id, name: a.name, chips: a.chips }));
+      return NextResponse.json({ leaderboard: board, total: agents.length });
+    }
+
+    case 'game_plan': {
+      const sid = agentId || paramAgentId;
+      if (!sid) return err('Login required or provide agent_id');
+      const active = getActiveGamePlan(sid);
+      const plans = getGamePlans(sid);
+      return NextResponse.json({ active_plan: active, all_plans: plans });
+    }
+
+    case 'game_plan_catalog': {
+      return NextResponse.json({ catalog: getStrategyCatalog() });
+    }
+
+    case 'auth_stats': {
       return NextResponse.json({ auth: getAuthStats() });
     }
 
@@ -376,6 +411,21 @@ export async function POST(req: NextRequest) {
       if (!body.room_id) return err('room_id required');
       if (!body.message) return err('message required');
       return NextResponse.json({ success: true, message: 'Message sent (visible to WebSocket clients)' });
+    }
+
+    // ==== Declare game plan ====
+    case 'game_plan': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required');
+      if (!body.name) return err('name required');
+      if (!body.distribution) return err('distribution required (array of {ref, weight})');
+      const result = setGamePlan(id, {
+        id: body.plan_id,
+        name: body.name,
+        distribution: body.distribution,
+      });
+      if (!result.success) return err(result.error!);
+      return NextResponse.json({ success: true, plan: result.plan });
     }
 
     // ==== Submit nonce for fairness verification ====
