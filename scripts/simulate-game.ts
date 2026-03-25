@@ -88,10 +88,11 @@ async function main() {
   console.log(colorize(`  Two agents fighting for chips at ${BASE}`, 'dim'));
   sep('═');
 
-  // 1. Register agents
+  // 1. Register agents (use unique IDs per run so welcome chips are fresh)
+  const runId = Date.now().toString(36).slice(-4);
   const agents = [
-    { agentId: 'sim-alice', name: 'Alice 🤖' },
-    { agentId: 'sim-bob',   name: 'Bob 🤖' },
+    { agentId: `sim-alice-${runId}`, name: 'Alice 🤖' },
+    { agentId: `sim-bob-${runId}`,   name: 'Bob 🤖' },
   ];
 
   const sessions: { apiKey: string; name: string; agentId: string }[] = [];

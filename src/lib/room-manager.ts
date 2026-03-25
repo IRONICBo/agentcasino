@@ -1,39 +1,78 @@
 import { v4 as uuid } from 'uuid';
-import { Room, RoomInfo, ClientGameState, ClientPlayer } from './types';
+import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './types';
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
 
-// Global singleton to share state between API routes and Socket.IO
+// ─── Stake categories (fixed) ────────────────────────────────────────────────
+
+export const STAKE_CATEGORIES: Omit<StakeCategory, 'tables'>[] = [
+  {
+    id: 'low',
+    name: 'Low Stakes',
+    description: 'Blinds 500/1,000 · Buy-in 20k–100k',
+    smallBlind: 500,
+    bigBlind: 1_000,
+    minBuyIn: 20_000,
+    maxBuyIn: 100_000,
+    maxPlayers: 9,
+  },
+  {
+    id: 'mid',
+    name: 'Mid Stakes',
+    description: 'Blinds 2,500/5,000 · Buy-in 100k–500k',
+    smallBlind: 2_500,
+    bigBlind: 5_000,
+    minBuyIn: 100_000,
+    maxBuyIn: 500_000,
+    maxPlayers: 6,
+  },
+  {
+    id: 'high',
+    name: 'High Roller',
+    description: 'Blinds 10,000/20,000 · Buy-in 400k–2M',
+    smallBlind: 10_000,
+    bigBlind: 20_000,
+    minBuyIn: 400_000,
+    maxBuyIn: 2_000_000,
+    maxPlayers: 6,
+  },
+];
+
+// ─── Fixed table counts per category ─────────────────────────────────────────
+
+const TABLES_PER_CATEGORY: Record<string, number> = {
+  low: 5,
+  mid: 3,
+  high: 2,
+};
+
+// ─── Room store (global singleton) ───────────────────────────────────────────
+
+interface ExtendedRoom extends Room {
+  categoryId: string;
+  tableNumber: number;
+}
+
 const globalAny = globalThis as any;
 if (!globalAny.__casino_rooms) {
-  globalAny.__casino_rooms = new Map<string, Room>();
+  globalAny.__casino_rooms = new Map<string, ExtendedRoom>();
 }
-const rooms: Map<string, Room> = globalAny.__casino_rooms;
+const rooms: Map<string, ExtendedRoom> = globalAny.__casino_rooms;
 
-// Create default rooms on startup
-export function initDefaultRooms(): void {
-  if (rooms.size > 0) return; // already initialized
-  createRoom('Low Stakes Lounge', 500, 1000, 20_000, 100_000, 9);
-  createRoom('Mid Stakes Arena', 2500, 5000, 100_000, 500_000, 6);
-  createRoom('High Roller Suite', 10_000, 20_000, 400_000, 2_000_000, 6);
-}
+// ─── Init ─────────────────────────────────────────────────────────────────────
 
-export function createRoom(
-  name: string,
-  smallBlind: number,
-  bigBlind: number,
-  minBuyIn: number,
-  maxBuyIn: number,
-  maxPlayers: number,
-): Room {
-  const room: Room = {
+function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom {
+  const cat = STAKE_CATEGORIES.find(c => c.id === categoryId)!;
+  const room: ExtendedRoom = {
     id: uuid(),
-    name,
-    smallBlind,
-    bigBlind,
-    minBuyIn,
-    maxBuyIn,
-    maxPlayers,
+    name: `Table ${tableNumber}`,
+    categoryId,
+    tableNumber,
+    smallBlind: cat.smallBlind,
+    bigBlind: cat.bigBlind,
+    minBuyIn: cat.minBuyIn,
+    maxBuyIn: cat.maxBuyIn,
+    maxPlayers: cat.maxPlayers,
     game: null,
     spectators: [],
     createdAt: Date.now(),
@@ -42,20 +81,55 @@ export function createRoom(
   return room;
 }
 
-export function getRoom(id: string): Room | undefined {
+export function initDefaultRooms(): void {
+  for (const cat of STAKE_CATEGORIES) {
+    const existing = Array.from(rooms.values()).filter(r => r.categoryId === cat.id);
+    const count = TABLES_PER_CATEGORY[cat.id] ?? 3;
+    for (let i = existing.length + 1; i <= count; i++) {
+      createFixedTable(cat.id, i);
+    }
+  }
+}
+
+// ─── Lookup ───────────────────────────────────────────────────────────────────
+
+export function getRoom(id: string): ExtendedRoom | undefined {
   return rooms.get(id);
 }
 
-export function listRooms(): RoomInfo[] {
-  return Array.from(rooms.values()).map(r => ({
+// ─── Listing ──────────────────────────────────────────────────────────────────
+
+function toRoomInfo(r: ExtendedRoom): RoomInfo {
+  return {
     id: r.id,
     name: r.name,
     playerCount: r.game?.players.length ?? 0,
     maxPlayers: r.maxPlayers,
     smallBlind: r.smallBlind,
     bigBlind: r.bigBlind,
+    minBuyIn: r.minBuyIn,
+    maxBuyIn: r.maxBuyIn,
+    categoryId: r.categoryId,
+    tableNumber: r.tableNumber,
+    createdAt: r.createdAt,
+  };
+}
+
+export function listRooms(): RoomInfo[] {
+  return Array.from(rooms.values()).map(toRoomInfo);
+}
+
+export function listCategories(): (Omit<StakeCategory, 'tables'> & { tables: RoomInfo[] })[] {
+  return STAKE_CATEGORIES.map(cat => ({
+    ...cat,
+    tables: Array.from(rooms.values())
+      .filter(r => r.categoryId === cat.id)
+      .sort((a, b) => a.tableNumber - b.tableNumber)
+      .map(toRoomInfo),
   }));
 }
+
+// ─── Join / Leave ─────────────────────────────────────────────────────────────
 
 export function joinRoom(roomId: string, agentId: string, agentName: string, buyIn: number): string | null {
   const room = rooms.get(roomId);
@@ -82,7 +156,6 @@ export function joinRoom(roomId: string, agentId: string, agentName: string, buy
     return 'Already at this table';
   }
 
-  // Find open seat
   const takenSeats = new Set(room.game.players.map(p => p.seatIndex));
   let seatIndex = -1;
   for (let i = 0; i < room.maxPlayers; i++) {
@@ -90,15 +163,14 @@ export function joinRoom(roomId: string, agentId: string, agentName: string, buy
   }
   if (seatIndex === -1) return 'No seats available';
 
-  // Deduct chips from agent's bank
   if (!deductChips(agentId, buyIn)) return 'Failed to deduct chips';
 
   if (!addPlayer(room.game, agentId, agentName, buyIn, seatIndex)) {
-    addChips(agentId, buyIn); // refund
+    addChips(agentId, buyIn);
     return 'Failed to join table';
   }
 
-  return null; // success
+  return null;
 }
 
 export function leaveRoom(roomId: string, agentId: string): void {
@@ -107,13 +179,13 @@ export function leaveRoom(roomId: string, agentId: string): void {
 
   const player = removePlayer(room.game, agentId);
   if (player) {
-    // Return remaining chips to agent's bank
     addChips(agentId, player.chips);
   }
 
-  // Remove from spectators too
   room.spectators = room.spectators.filter(id => id !== agentId);
 }
+
+// ─── Game actions ─────────────────────────────────────────────────────────────
 
 export function handleAction(roomId: string, agentId: string, action: string, amount?: number): string | null {
   const room = rooms.get(roomId);
@@ -146,7 +218,6 @@ export function tryStartNextHand(roomId: string): boolean {
   if (room.game.phase !== 'showdown') return false;
   if (room.game.players.length < 2) return false;
 
-  // Remove players with 0 chips
   const bustedPlayers = room.game.players.filter(p => p.chips === 0);
   for (const p of bustedPlayers) {
     removePlayer(room.game, p.agentId);
@@ -157,6 +228,8 @@ export function tryStartNextHand(roomId: string): boolean {
   startNewHand(room.game);
   return true;
 }
+
+// ─── Client state ─────────────────────────────────────────────────────────────
 
 export function getClientGameState(roomId: string, viewerAgentId: string): ClientGameState | null {
   const room = rooms.get(roomId);

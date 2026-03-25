@@ -12,7 +12,6 @@ export default function LobbyPage() {
   const [chips, setChips] = useState(0);
   const [message, setMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [creating, setCreating] = useState<string | null>(null); // categoryId being created
   const router = useRouter();
 
   const fetchCategories = useCallback(() => {
@@ -61,28 +60,6 @@ export default function LobbyPage() {
     localStorage.setItem('current_room', roomId);
     router.push(`/room/${roomId}`);
   }, [router]);
-
-  const createTable = useCallback(async (categoryId: string) => {
-    setCreating(categoryId);
-    try {
-      const res = await fetch('/api/casino', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create_table', category_id: categoryId }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        await fetchCategories();
-        router.push(`/room/${data.room_id}`);
-      } else {
-        setMessage(data.error || 'Failed to create table');
-      }
-    } catch {
-      setMessage('Failed to create table');
-    } finally {
-      setCreating(null);
-    }
-  }, [fetchCategories, router]);
 
   const updateName = useCallback(() => {
     if (agentName.trim()) localStorage.setItem('agent_name', agentName.trim());
@@ -235,21 +212,11 @@ export default function LobbyPage() {
             {categories.map(cat => (
               <div key={cat.id}>
                 {/* Category header */}
-                <div className="flex items-baseline justify-between mb-3">
-                  <div>
-                    <h3 className="font-serif italic text-base font-medium">{cat.name}</h3>
-                    <p className="font-mono text-[10px] mt-0.5" style={{ color: 'var(--ink-light)' }}>
-                      {cat.description}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => createTable(cat.id)}
-                    disabled={creating === cat.id}
-                    className="font-mono text-[10px] tracking-[0.08em] uppercase border border-[var(--border)] px-2.5 py-1 transition-opacity hover:opacity-60 disabled:opacity-30"
-                    style={{ color: 'var(--ink-light)' }}
-                  >
-                    {creating === cat.id ? '…' : '+ New Table'}
-                  </button>
+                <div className="mb-3">
+                  <h3 className="font-serif italic text-base font-medium">{cat.name}</h3>
+                  <p className="font-mono text-[10px] mt-0.5" style={{ color: 'var(--ink-light)' }}>
+                    {cat.description}
+                  </p>
                 </div>
 
                 {/* Tables */}
