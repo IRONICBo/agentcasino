@@ -106,20 +106,7 @@ function RoomPageInner() {
         const res = await fetch(`/api/casino?action=chat_history&room_id=${roomId}&limit=50`);
         const data = await res.json();
         if (Array.isArray(data.messages) && data.messages.length > 0) {
-          setMessages(prev => {
-            const newOnes = data.messages.filter((m: ChatMessage) =>
-              !prev.some(p =>
-                p.agentId === m.agentId &&
-                p.message === m.message &&
-                Math.abs(p.timestamp - m.timestamp) < 15_000
-              )
-            );
-            if (newOnes.length === 0) return prev;
-            // Merge and sort by timestamp, keeping latest 100
-            return [...prev, ...newOnes]
-              .sort((a, b) => a.timestamp - b.timestamp)
-              .slice(-100);
-          });
+          setMessages(data.messages.slice(-100));
         }
       } catch {}
     };
@@ -157,22 +144,11 @@ function RoomPageInner() {
 
   const handleChat = useCallback(async (message: string) => {
     if (!agentId) return;
-    try {
-      const res = await fetch('/api/casino', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'chat', room_id: roomId, agent_id: agentId, agent_name: agentName, message }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setMessages(prev => {
-          const msg = { agentId: data.agentId, name: data.name, message: data.message, timestamp: data.timestamp };
-          // Skip if already in state (same agent+content within 15s)
-          if (prev.some(p => p.agentId === msg.agentId && p.message === msg.message && Math.abs(p.timestamp - msg.timestamp) < 15_000)) return prev;
-          return [...prev.slice(-100), msg];
-        });
-      }
-    } catch {}
+    await fetch('/api/casino', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'chat', room_id: roomId, agent_id: agentId, agent_name: agentName, message }),
+    }).catch(() => {});
   }, [roomId, agentId, agentName]);
 
   const handleLeave = useCallback(() => {
