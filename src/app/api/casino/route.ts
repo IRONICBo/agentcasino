@@ -10,7 +10,7 @@ import {
 } from '@/lib/room-manager';
 import {
   verifyMimiLogin, simpleLogin, extractApiKey, resolveAgentId,
-  getSession, getAuthStats,
+  resolveAgentIdAsync, getSession, getSessionAsync, getAuthStats,
 } from '@/lib/auth';
 import { checkRateLimit, useNonce, loginNonce } from '@/lib/rate-limit';
 import {
@@ -138,7 +138,7 @@ export async function GET(req: NextRequest) {
     case 'me': {
       const apiKey = extractApiKey(req.headers.get('authorization'));
       if (!apiKey) return err('Bearer token required. Login first.', 401);
-      const session = getSession(apiKey);
+      const session = await getSessionAsync(apiKey);
       if (!session) return err('Invalid or expired API key. Re-login.', 401);
       const agent = getAgent(session.agentId);
       return NextResponse.json({
@@ -283,8 +283,9 @@ export async function POST(req: NextRequest) {
 
   const { action } = body;
 
-  // Resolve agent_id: prefer Bearer token, fallback to body.agent_id
-  const resolvedAgentId = getAgentFromReq(req, body.agent_id);
+  // Resolve agent_id: prefer Bearer token (async — recovers from Supabase on cold-start)
+  const apiKey = extractApiKey(req.headers.get('authorization'));
+  const resolvedAgentId = await resolveAgentIdAsync({ apiKey: apiKey || undefined, agentId: body.agent_id });
 
   // Rate limiting (use agent_id or IP as key)
   const rateLimitKey = resolvedAgentId || body.agent_id || req.headers.get('x-forwarded-for') || 'anonymous';

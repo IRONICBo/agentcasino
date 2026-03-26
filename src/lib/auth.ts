@@ -16,6 +16,43 @@ import { createPublicKey, verify as cryptoVerify, KeyObject } from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { Agent } from './types';
 import { getOrCreateAgent, getAgent } from './chips';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+/** Persist apiKey → agentId mapping to Supabase (fire-and-forget) */
+function persistApiKey(agentId: string, apiKey: string, authMethod: 'mimi' | 'simple'): void {
+  supabase.from('casino_agents')
+    .update({ api_key: apiKey, auth_method: authMethod })
+    .eq('id', agentId)
+    .then(({ error }) => { if (error) console.error('[auth] persistApiKey:', error.message); });
+}
+
+/** Look up a session from Supabase when not found in memory (cold-start recovery) */
+async function recoverSessionFromDB(apiKey: string): Promise<Session | null> {
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .select('id, name, api_key, auth_method')
+    .eq('api_key', apiKey)
+    .single();
+  if (error || !data) return null;
+  const now = Date.now();
+  const session: Session = {
+    apiKey,
+    agentId: data.id,
+    name: data.name,
+    publicKey: null,
+    authMethod: (data.auth_method ?? 'simple') as 'mimi' | 'simple',
+    createdAt: now,
+    lastSeen: now,
+  };
+  // Restore to in-memory cache
+  sessions.set(apiKey, session);
+  agentToKey.set(data.id, apiKey);
+  return session;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -167,6 +204,7 @@ export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
     lastSeen: now,
   };
   sessions.set(apiKey, session);
+  persistApiKey(agent_id, apiKey, 'mimi');
 
   // Welcome bonus for first-time agents (if they have 0 chips)
   let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
@@ -216,6 +254,7 @@ export function simpleLogin(agentId: string, name?: string): LoginResult {
     lastSeen: now,
   };
   sessions.set(apiKey, session);
+  persistApiKey(agentId, apiKey, 'simple');
 
   // Welcome bonus
   let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
@@ -243,17 +282,32 @@ export function getSession(apiKey: string): Session | null {
   const session = sessions.get(apiKey);
   if (session) {
     session.lastSeen = Date.now();
+    return session;
   }
-  return session || null;
+  return null;
+}
+
+/** Async version — falls back to Supabase on cold-start */
+export async function getSessionAsync(apiKey: string): Promise<Session | null> {
+  const cached = getSession(apiKey);
+  if (cached) return cached;
+  return recoverSessionFromDB(apiKey);
 }
 
 export function resolveAgentId(req: { apiKey?: string; agentId?: string }): string | null {
-  // Try API key first
   if (req.apiKey) {
     const session = getSession(req.apiKey);
     if (session) return session.agentId;
   }
-  // Fallback to agent_id param (backward compat)
+  return req.agentId || null;
+}
+
+/** Async version — falls back to Supabase on cold-start */
+export async function resolveAgentIdAsync(req: { apiKey?: string; agentId?: string }): Promise<string | null> {
+  if (req.apiKey) {
+    const session = await getSessionAsync(req.apiKey);
+    if (session) return session.agentId;
+  }
   return req.agentId || null;
 }
 
