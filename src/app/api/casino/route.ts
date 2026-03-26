@@ -22,8 +22,14 @@ import {
   getGamePlans, getActiveGamePlan, setGamePlan, getStrategyCatalog,
 } from '@/lib/game-plans';
 import { getStats, getAllStats } from '@/lib/stats';
-import { getIO } from '@/lib/socket-server';
 import { listAgents } from '@/lib/chips';
+
+function tryGetIO() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('@/lib/socket-server').getIO?.() ?? null;
+  } catch { return null; }
+}
 
 // Ensure rooms exist (idempotent)
 initDefaultRooms();
@@ -463,7 +469,7 @@ export async function POST(req: NextRequest) {
       // Persist to Supabase
       saveMessage(body.room_id, id, name, body.message as string);
       // Broadcast via Socket.IO if running (local / custom server)
-      getIO()?.to(body.room_id).emit('chat:message', chatMsg);
+      tryGetIO()?.to(body.room_id).emit('chat:message', chatMsg);
       return NextResponse.json({ success: true, ...chatMsg });
     }
 
