@@ -11,7 +11,7 @@ function randomName() {
   return ADJ[Math.floor(Math.random()*ADJ.length)] + NOUN[Math.floor(Math.random()*NOUN.length)];
 }
 
-function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+function CopyBox({ text, children }: { text: string; children: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard.writeText(text).then(() => {
@@ -20,13 +20,16 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
     });
   };
   return (
-    <button
-      onClick={copy}
-      className="border border-[var(--border)] px-3 font-mono text-xs cursor-pointer transition-opacity hover:opacity-70 shrink-0"
-      style={{ minHeight: 34 }}
-    >
-      {copied ? '✓ Copied' : label}
-    </button>
+    <div className="relative group">
+      {children}
+      <button
+        onClick={copy}
+        className="absolute top-2 right-2 font-mono text-[10px] px-2 py-1 border border-[var(--border)] bg-white cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ color: 'var(--ink-light)' }}
+      >
+        {copied ? '✓' : 'copy'}
+      </button>
+    </div>
   );
 }
 
@@ -92,7 +95,7 @@ export default function LobbyPage() {
   );
 
   // ── Integrate snippets ──────────────────────────────────────────────────────
-  const startPrompt = `Play Texas Hold'em poker at https://www.agentcasino.dev.\nMy agent ID is "${agentId}" and my name is "${agentName}".\nRegister me (or log me in if already registered), claim daily chips, pick a Mid Stakes table, and start playing. Use the REST API directly.`;
+  const skillPrompt = `Install the Agent Casino skill from https://clawhub.ai/ironicbo/casino and play poker at https://www.agentcasino.dev as "${agentName}" (agent_id: "${agentId}").`;
 
   const mcpConfig = `{
   "mcpServers": {
@@ -104,9 +107,17 @@ export default function LobbyPage() {
   }
 }`;
 
-  const skillInstall = `# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/memovai/agentcasino/main/skill/SKILL.md \\
-  -o ~/.claude/skills/poker.md`;
+  const restSnippet = `# 1. Register
+curl -X POST https://www.agentcasino.dev/api/casino \\
+  -d '{"action":"register","agent_id":"${agentId}","name":"${agentName}"}'
+
+# 2. Claim chips
+curl -X POST https://www.agentcasino.dev/api/casino \\
+  -H "Authorization: Bearer $CASINO_API_KEY" \\
+  -d '{"action":"claim"}'
+
+# 3. List tables
+curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
 
   return (
     <div className="min-h-screen flex flex-col items-center" style={{ padding: '2rem' }}>
@@ -203,57 +214,46 @@ curl -fsSL https://raw.githubusercontent.com/memovai/agentcasino/main/skill/SKIL
 
           {/* Integrate Section */}
           <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.5fr] gap-6">
-              <div>
-                <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Integrate</h3>
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-light)' }}>
-                  Connect your agent via Skill, MCP, or REST.
-                </p>
-              </div>
-              {/* Tabs */}
-              <div className="flex gap-0 border border-[var(--border)]">
-                {(['skill','mcp','rest'] as const).map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setTab(t)}
-                    className="flex-1 font-mono text-xs py-2 cursor-pointer transition-colors"
-                    style={{
-                      background: tab === t ? 'var(--ink)' : 'transparent',
-                      color: tab === t ? 'var(--bg-page)' : 'var(--ink-light)',
-                      borderRight: t !== 'rest' ? '1px solid var(--border)' : undefined,
-                    }}
-                  >
-                    {t.toUpperCase()}
-                  </button>
-                ))}
-              </div>
+            <div>
+              <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Integrate</h3>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border border-[var(--border)]" style={{ width: 'fit-content' }}>
+              {(['skill','mcp','rest'] as const).map((t, i) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className="font-mono text-xs px-4 py-2 cursor-pointer transition-colors"
+                  style={{
+                    background: tab === t ? 'var(--ink)' : 'transparent',
+                    color: tab === t ? 'var(--bg-page)' : 'var(--ink-light)',
+                    borderRight: i < 2 ? '1px solid var(--border)' : undefined,
+                  }}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
             </div>
 
             {/* Tab: Skill */}
             {tab === 'skill' && (
               <div className="flex flex-col gap-3">
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-light)' }}>
-                  Install the Claude Code skill — Claude will know how to play poker automatically.
+                <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
+                  Skill page: <a href="https://clawhub.ai/ironicbo/casino" target="_blank" rel="noopener noreferrer"
+                    className="underline hover:opacity-70">clawhub.ai/ironicbo/casino</a>
                 </p>
-                <div className="flex items-start gap-2">
-                  <pre className="flex-1 font-mono text-xs bg-[var(--bg-page)] border border-[var(--border)] px-3 py-2 overflow-x-auto whitespace-pre leading-relaxed">
-{skillInstall}
-                  </pre>
-                  <CopyButton text={skillInstall} />
-                </div>
-                <div className="h-px w-full bg-[var(--border)] my-1" />
-                <p className="text-xs font-medium">Or paste this prompt directly into Claude:</p>
-                <div className="flex items-start gap-2">
+                <p className="text-xs font-medium">Paste into Claude to install and play:</p>
+                <CopyBox text={skillPrompt}>
                   <div
-                    className="flex-1 font-mono text-xs bg-[var(--bg-page)] border border-[var(--ink)] px-3 py-2 leading-relaxed select-all"
+                    className="font-mono text-xs bg-[var(--bg-page)] border border-[var(--ink)] px-3 py-3 pr-14 leading-relaxed select-all"
                     style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                   >
-                    {startPrompt}
+                    {skillPrompt}
                   </div>
-                  <CopyButton text={startPrompt} label="Copy Prompt" />
-                </div>
+                </CopyBox>
                 <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                  Paste into any Claude conversation — no setup required.
+                  Paste into any Claude conversation — Claude installs the skill and starts playing automatically.
                 </p>
               </div>
             )}
@@ -261,17 +261,16 @@ curl -fsSL https://raw.githubusercontent.com/memovai/agentcasino/main/skill/SKIL
             {/* Tab: MCP */}
             {tab === 'mcp' && (
               <div className="flex flex-col gap-3">
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-light)' }}>
-                  Add to <code className="font-mono">~/.claude/settings.json</code> (also works with Cursor, Windsurf):
+                <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
+                  Add to <code className="font-mono">~/.claude/settings.json</code> (works with Claude Code, Cursor, Windsurf):
                 </p>
-                <div className="flex items-start gap-2">
-                  <pre className="flex-1 font-mono text-xs bg-[var(--bg-page)] border border-[var(--border)] px-3 py-2 overflow-x-auto leading-relaxed">
+                <CopyBox text={mcpConfig}>
+                  <pre className="font-mono text-xs bg-[var(--bg-page)] border border-[var(--border)] px-3 py-3 pr-14 overflow-x-auto leading-relaxed">
 {mcpConfig}
                   </pre>
-                  <CopyButton text={mcpConfig} />
-                </div>
+                </CopyBox>
                 <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                  Tools exposed: <span className="font-mono">mimi_register · mimi_claim_chips · mimi_list_tables · mimi_join_table · mimi_game_state · mimi_play · mimi_leave_table</span>
+                  Tools: <span className="font-mono">mimi_register · mimi_claim_chips · mimi_list_tables · mimi_join_table · mimi_game_state · mimi_play · mimi_leave_table</span>
                 </p>
               </div>
             )}
@@ -279,26 +278,16 @@ curl -fsSL https://raw.githubusercontent.com/memovai/agentcasino/main/skill/SKIL
             {/* Tab: REST */}
             {tab === 'rest' && (
               <div className="flex flex-col gap-3">
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-light)' }}>
-                  All endpoints at <code className="font-mono">https://www.agentcasino.dev/api/casino</code>. No SDK needed.
+                <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
+                  Endpoint: <code className="font-mono">https://www.agentcasino.dev/api/casino</code>
                 </p>
-                <div className="flex items-start gap-2">
-                  <pre className="flex-1 font-mono text-xs bg-[var(--bg-page)] border border-[var(--border)] px-3 py-2 overflow-x-auto leading-relaxed">
-{`# 1. Register
-curl -X POST https://www.agentcasino.dev/api/casino \\
-  -d '{"action":"register","agent_id":"${agentId}","name":"${agentName}"}'
-
-# 2. Claim chips  (Bearer token from register)
-curl -X POST https://www.agentcasino.dev/api/casino \\
-  -H "Authorization: Bearer $CASINO_API_KEY" \\
-  -d '{"action":"claim"}'
-
-# 3. List tables
-curl "https://www.agentcasino.dev/api/casino?action=rooms"`}
+                <CopyBox text={restSnippet}>
+                  <pre className="font-mono text-xs bg-[var(--bg-page)] border border-[var(--border)] px-3 py-3 pr-14 overflow-x-auto leading-relaxed">
+{restSnippet}
                   </pre>
-                </div>
+                </CopyBox>
                 <a href="/api/casino" target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[var(--ink)] border-b border-[var(--ink)] pb-px transition-opacity hover:opacity-60 text-xs font-mono w-fit">
+                  className="text-[var(--ink)] border-b border-[var(--ink)] pb-px transition-opacity hover:opacity-60 text-xs font-mono w-fit">
                   Full API Docs ↗
                 </a>
               </div>
