@@ -12,77 +12,201 @@ interface PlayerSeatProps {
   phase: GamePhase;
 }
 
-export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBigBlind, phase }: PlayerSeatProps) {
-  // Position badge text
-  const badge = isDealer ? 'D' : isSmallBlind ? 'SB' : isBigBlind ? 'BB' : null;
+// Consistent color per agent name
+const AVATAR_COLORS = [
+  '#c0392b','#e74c3c','#9b59b6','#8e44ad',
+  '#2471a3','#1a5276','#148f77','#117a65',
+  '#d35400','#ca6f1e','#1e8449','#922b21',
+];
 
-  // Status text on the right
-  const statusText = player.hasFolded ? 'FOLD'
-    : player.isAllIn ? 'ALL IN'
-    : player.currentBet > 0 ? `$${player.currentBet.toLocaleString()}`
-    : null;
+function avatarColor(name: string): string {
+  const idx = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[idx];
+}
+
+function initials(name: string): string {
+  return name.replace(/[_-]/g, ' ').split(' ').map(p => p[0] ?? '').join('').toUpperCase().slice(0, 2) || '?';
+}
+
+// Visual chip for bet display
+function ChipStack({ amount }: { amount: number }) {
+  if (!amount) return null;
+  // Pick chip color by amount
+  const color = amount >= 10000 ? '#c0392b' : amount >= 1000 ? '#2471a3' : '#1a5276';
+  const label = amount >= 1_000_000 ? `${(amount/1_000_000).toFixed(1)}M`
+    : amount >= 1000 ? `${(amount/1000).toFixed(0)}K`
+    : String(amount);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+      {/* Chip stack layers */}
+      <div style={{ position: 'relative', width: 18, height: 20 }}>
+        {[4, 2, 0].map((offset, i) => (
+          <div key={i} style={{
+            position: 'absolute', left: 0, bottom: offset,
+            width: 18, height: 18, borderRadius: '50%',
+            background: color,
+            border: '1.5px solid rgba(255,255,255,0.2)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25), 0 1px 3px rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {i === 2 && (
+              <span style={{ fontSize: 5, color: 'rgba(255,255,255,0.8)', fontWeight: 800, fontFamily: 'monospace' }}>
+                ●●●
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      <span style={{ fontSize: 10, fontWeight: 700, color: '#f0c040', fontFamily: 'monospace' }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+// Timer bar for active player
+function TimerBar() {
+  return (
+    <div style={{
+      position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,
+      background: 'rgba(255,255,255,0.08)', borderRadius: '0 0 8px 8px', overflow: 'hidden',
+    }}>
+      <div style={{
+        height: '100%',
+        background: 'linear-gradient(90deg, #f0c040, #d4af37)',
+        animation: 'timer-drain 25s linear forwards',
+        boxShadow: '0 0 4px rgba(212,175,55,0.6)',
+      }} />
+    </div>
+  );
+}
+
+export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBigBlind, phase }: PlayerSeatProps) {
+  const badge = isDealer ? 'D' : isSmallBlind ? 'SB' : isBigBlind ? 'BB' : null;
+  const bgColor = avatarColor(player.name);
+  const inits = initials(player.name);
+  const isFolded = player.hasFolded;
+  const isAllIn = player.isAllIn;
 
   return (
-    <div className="flex flex-col items-start gap-1">
-      {/* Cards */}
+    <div
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+        opacity: isFolded ? 0.38 : 1,
+        transition: 'opacity 0.5s ease',
+        filter: isFolded ? 'grayscale(0.6)' : 'none',
+      }}
+    >
+      {/* ── Hole cards ── */}
       {phase !== 'waiting' && (
-        <div className="flex gap-0.5 ml-1">
+        <div style={{ display: 'flex', gap: 2, marginBottom: 2, position: 'relative' }}>
           {player.holeCards ? (
             player.holeCards.map((c, i) => (
-              <PlayingCard key={i} card={c} small dealDelay={i * 80} />
+              <PlayingCard key={i} card={c} small dealDelay={i * 90} />
             ))
           ) : (
             <>
               <PlayingCard faceDown small dealDelay={0} />
-              <PlayingCard faceDown small className="-ml-2" dealDelay={80} />
+              <div style={{ marginLeft: -10 }}><PlayingCard faceDown small dealDelay={90} /></div>
             </>
           )}
         </div>
       )}
 
-      {/* Player info card */}
-      <div
-        className={`rounded-lg px-3 py-2 min-w-[140px] transition-colors duration-300 ${
-          isCurrentTurn
-            ? 'bg-[#2a2a2a] ring-1 ring-yellow-500/60 animate-turn-ring'
-            : 'bg-[#1e1e1e]/90'
-        }`}
-        style={{ opacity: player.hasFolded ? 0.4 : 1, transition: 'opacity 0.5s ease' }}
-      >
-        {/* Top row: name + badge */}
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <span className={`text-sm font-medium truncate max-w-[90px] ${
-            player.isConnected ? 'text-gray-200' : 'text-gray-600'
-          }`}>
-            {player.name.length > 12 ? player.name.slice(0, 11) + '…' : player.name}
-          </span>
-          {badge && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-              isDealer ? 'bg-emerald-600 text-white' : 'bg-gray-600 text-gray-300'
-            }`}>
-              {badge}
-            </span>
-          )}
+      {/* ── Avatar ── */}
+      <div style={{ position: 'relative' }}>
+        <div
+          className={`player-avatar ${isCurrentTurn ? 'player-avatar-active' : ''}`}
+          style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: `radial-gradient(circle at 35% 35%, ${bgColor}dd, ${bgColor}88)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 13, color: '#fff',
+          }}
+        >
+          {inits}
         </div>
 
-        {/* Bottom row: chips + status */}
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-mono font-semibold text-emerald-400 tabular-nums">
-            ${player.chips.toLocaleString()}
-          </span>
-          {statusText && (
-            <span
-              key={statusText}
-              className={`text-[11px] font-semibold tabular-nums animate-action-in ${
-                player.hasFolded ? 'text-gray-500'
-                : player.isAllIn ? 'text-red-400'
-                : 'text-amber-400'
-              }`}
-            >
-              {statusText}
-            </span>
-          )}
+        {/* Dealer / blind badge */}
+        {badge && (
+          <div style={{
+            position: 'absolute', top: -4, right: -4,
+            width: 18, height: 18, borderRadius: '50%',
+            background: isDealer
+              ? 'linear-gradient(135deg, #f0c040, #d4af37)'
+              : 'linear-gradient(135deg, #555, #333)',
+            border: '1.5px solid rgba(255,255,255,0.3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 7, fontWeight: 900, color: isDealer ? '#1a0f00' : '#ccc',
+            fontFamily: 'monospace',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+            zIndex: 10,
+          }}>
+            {badge}
+          </div>
+        )}
+      </div>
+
+      {/* ── Nameplate ── */}
+      <div
+        className={`nameplate ${isCurrentTurn ? 'nameplate-active' : ''}`}
+        style={{
+          minWidth: 110, borderRadius: 8, padding: '5px 8px 7px',
+          textAlign: 'center', position: 'relative', overflow: 'hidden',
+        }}
+      >
+        {/* Name */}
+        <div style={{
+          fontSize: 11, fontWeight: 600, color: '#e8e8e8',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          maxWidth: 100, margin: '0 auto',
+          fontFamily: 'Inter, sans-serif',
+          letterSpacing: '0.01em',
+        }}>
+          {player.name}
         </div>
+
+        {/* Chip count */}
+        <div style={{
+          fontSize: 11, fontWeight: 700, color: '#2ecc71',
+          fontFamily: 'monospace', letterSpacing: '0.02em', marginTop: 2,
+        }}>
+          {player.chips.toLocaleString()}
+        </div>
+
+        {/* Status badge */}
+        {(isFolded || isAllIn) && (
+          <div
+            key={isFolded ? 'fold' : 'allin'}
+            className="animate-action-in"
+            style={{
+              position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)',
+              padding: '2px 7px', borderRadius: 4, fontSize: 9, fontWeight: 900,
+              fontFamily: 'monospace', letterSpacing: '0.1em',
+              background: isFolded
+                ? 'rgba(100,100,100,0.9)'
+                : 'linear-gradient(135deg, #c0392b, #e74c3c)',
+              color: '#fff',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {isFolded ? 'FOLD' : 'ALL IN'}
+          </div>
+        )}
+
+        {/* Current bet */}
+        {player.currentBet > 0 && !isFolded && (
+          <div key={player.currentBet} className="animate-action-in" style={{
+            position: 'absolute', top: -20, left: '50%', transform: 'translateX(-50%)',
+          }}>
+            <ChipStack amount={player.currentBet} />
+          </div>
+        )}
+
+        {/* Active timer bar */}
+        {isCurrentTurn && <TimerBar />}
       </div>
     </div>
   );

@@ -43,7 +43,7 @@ export const STAKE_CATEGORIES: Omit<StakeCategory, 'tables'>[] = [
 const TABLES_PER_CATEGORY: Record<string, number> = {
   low: 5,
   mid: 3,
-  high: 2,
+  high: 3,
 };
 
 // ─── Room store (global singleton) ───────────────────────────────────────────

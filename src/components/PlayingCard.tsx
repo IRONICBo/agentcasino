@@ -5,10 +5,8 @@ import { Card } from '@/lib/types';
 const suitSymbols: Record<string, string> = {
   hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠',
 };
-
-const suitColors: Record<string, string> = {
-  hearts: 'text-red-500', diamonds: 'text-red-500',
-  clubs: 'text-gray-800', spades: 'text-gray-800',
+const suitColor: Record<string, string> = {
+  hearts: '#c8001e', diamonds: '#c8001e', clubs: '#111827', spades: '#111827',
 };
 
 export function PlayingCard({
@@ -17,35 +15,95 @@ export function PlayingCard({
   card?: Card | null; faceDown?: boolean; small?: boolean;
   className?: string; dealDelay?: number;
 }) {
-  const w = small ? 'w-9' : 'w-[52px]';
-  const h = small ? 'h-13' : 'h-[72px]';
+  const W = small ? 34 : 54;
+  const H = small ? 48 : 76;
+  const R = small ? 4 : 6;
 
-  // Face-down: dark navy card back
+  // ── Card back ──
   if (!card || faceDown) {
     return (
       <div
-        className={`${w} ${h} rounded-md bg-[#2a3a5c] border border-[#3d506e]/60 shadow-md animate-deal ${className}`}
-        style={{ animationDelay: `${dealDelay}ms` }}
-      />
+        className={`card-back animate-deal ${className}`}
+        style={{
+          width: W, height: H, borderRadius: R, flexShrink: 0, position: 'relative',
+          animationDelay: `${dealDelay}ms`,
+        }}
+      >
+        {/* Gold inset border */}
+        <div style={{
+          position: 'absolute', inset: 3,
+          border: '1px solid rgba(212,175,55,0.28)',
+          borderRadius: R - 2,
+        }} />
+        {/* Center pip */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: small ? 8 : 11, color: 'rgba(212,175,55,0.3)',
+          fontFamily: 'serif',
+        }}>♦</div>
+      </div>
     );
   }
 
-  // Face-up: white card with flip reveal
+  const color = suitColor[card.suit];
+  const sym = suitSymbols[card.suit];
+  const rankSize = small ? 9 : 13;
+  const suitSize = small ? 7 : 10;
+  const centerSize = small ? 16 : 26;
+
+  // ── Face-up card ──
   return (
     <div
-      className={`${w} ${h} rounded-md bg-white border border-gray-300 shadow-md relative overflow-hidden animate-flip ${className}`}
-      style={{ animationDelay: `${dealDelay}ms` }}
+      className={`animate-flip ${className}`}
+      style={{
+        width: W, height: H, borderRadius: R, flexShrink: 0,
+        background: '#fff',
+        border: '1px solid #d0d0d0',
+        boxShadow: '1px 3px 10px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.15)',
+        position: 'relative', overflow: 'hidden',
+        userSelect: 'none',
+        animationDelay: `${dealDelay}ms`,
+      }}
     >
-      <div className={`absolute top-0.5 left-1 flex flex-col items-center leading-none ${suitColors[card.suit]}`}>
-        <span className={`${small ? 'text-[9px]' : 'text-[11px]'} font-bold`}>{card.rank}</span>
-        <span className={`${small ? 'text-[7px]' : 'text-[9px]'} -mt-px`}>{suitSymbols[card.suit]}</span>
+      {/* Subtle inner light */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 60%)',
+        pointerEvents: 'none', borderRadius: R,
+      }} />
+
+      {/* Top-left rank + suit */}
+      <div style={{
+        position: 'absolute', top: small ? 1 : 2, left: small ? 2 : 3,
+        color, lineHeight: 1.1, textAlign: 'center',
+      }}>
+        <div style={{ fontSize: rankSize, fontWeight: 900, fontFamily: 'Georgia, serif', letterSpacing: '-0.03em' }}>
+          {card.rank}
+        </div>
+        <div style={{ fontSize: suitSize, marginTop: -1 }}>{sym}</div>
       </div>
-      <div className={`absolute inset-0 flex items-center justify-center ${suitColors[card.suit]}`}>
-        <span className={`${small ? 'text-base' : 'text-xl'} opacity-80`}>{suitSymbols[card.suit]}</span>
+
+      {/* Center suit */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color, fontSize: centerSize, opacity: 0.82,
+        textShadow: `0 1px 3px ${color}33`,
+      }}>
+        {sym}
       </div>
-      <div className={`absolute bottom-0.5 right-1 flex flex-col items-center leading-none rotate-180 ${suitColors[card.suit]}`}>
-        <span className={`${small ? 'text-[9px]' : 'text-[11px]'} font-bold`}>{card.rank}</span>
-        <span className={`${small ? 'text-[7px]' : 'text-[9px]'} -mt-px`}>{suitSymbols[card.suit]}</span>
+
+      {/* Bottom-right (rotated) */}
+      <div style={{
+        position: 'absolute', bottom: small ? 1 : 2, right: small ? 2 : 3,
+        color, lineHeight: 1.1, textAlign: 'center',
+        transform: 'rotate(180deg)',
+      }}>
+        <div style={{ fontSize: rankSize, fontWeight: 900, fontFamily: 'Georgia, serif', letterSpacing: '-0.03em' }}>
+          {card.rank}
+        </div>
+        <div style={{ fontSize: suitSize, marginTop: -1 }}>{sym}</div>
       </div>
     </div>
   );

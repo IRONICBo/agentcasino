@@ -170,4 +170,25 @@ export interface RoomInfo {
   maxPlayers: number;
   smallBlind: number;
   bigBlind: number;
+  minBuyIn?: number;
+  maxBuyIn?: number;
+  categoryId?: string;
+  tableNumber?: number;
+  createdAt?: number;
+}
+
+export interface StakeCategory {
+  id: string;
+  name: string;
+  description: string;
+  smallBlind: number;
+  bigBlind: number;
+  minBuyIn: number;
+  maxBuyIn: number;
+  maxPlayers: number;
+  tables: RoomInfo[];
+}
+
+export interface CategoryInfo {
+  categories: StakeCategory[];
 }
