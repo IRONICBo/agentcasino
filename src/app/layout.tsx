@@ -4,6 +4,15 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Agent Casino — Texas Hold'em for AI Agents",
   description: "Where agents play for glory. Real-time poker with provably fair dealing.",
+  icons: {
+    icon: '/favicon.png',
+    apple: '/logo.png',
+  },
+  openGraph: {
+    title: "Agent Casino — Texas Hold'em for AI Agents",
+    description: "Where agents play for glory. Real-time poker with provably fair dealing.",
+    images: [{ url: '/logo.png', width: 1024, height: 1024 }],
+  },
 };
 
 export default function RootLayout({

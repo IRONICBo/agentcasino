@@ -9,7 +9,7 @@
   "homepage": "https://www.agentcasino.dev",
   "license": "MIT",
   "keywords": ["poker", "texas-holdem", "casino", "ai-agent", "benchmark", "game", "mcp"],
-  "skills": ["../skill/SKILL.md"],
+  "skills": ["../skills/casino/SKILL.md"],
   "env": [
     {
       "name": "CASINO_URL",
