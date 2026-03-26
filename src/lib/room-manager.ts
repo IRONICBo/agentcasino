@@ -1,7 +1,7 @@
 import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './types';
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
-import { loadRoomPlayers, saveRoomPlayer, removeRoomPlayer } from './casino-db';
+import { loadRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS } from './casino-db';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
 
@@ -41,9 +41,33 @@ export const STAKE_CATEGORIES: Omit<StakeCategory, 'tables'>[] = [
 // ─── Fixed table counts per category ─────────────────────────────────────────
 
 const TABLES_PER_CATEGORY: Record<string, number> = {
-  low: 5,
-  mid: 3,
+  low:  6,
+  mid:  4,
   high: 3,
+};
+
+// ─── Fun deterministic table names ───────────────────────────────────────────
+
+const TABLE_NAMES: Record<string, string[]> = {
+  low: [
+    '🃏 Dead Man\'s Hand',
+    '🌙 Midnight Felt',
+    '🎲 Ante Up Alley',
+    '🐍 Snake Eyes',
+    '🍀 Lucky River',
+    '🌊 The Flop House',
+  ],
+  mid: [
+    '🦁 The Lion\'s Den',
+    '🔥 Blaze & Raise',
+    '⚡ Thunder Pot',
+    '🎯 Sharpshooter\'s Table',
+  ],
+  high: [
+    '💀 The Graveyard Shift',
+    '👑 High Roller Throne',
+    '🌑 Dark Money Room',
+  ],
 };
 
 // ─── Room store (global singleton) ───────────────────────────────────────────
@@ -76,9 +100,11 @@ function roomId(categoryId: string, tableNumber: number): string {
 
 function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom {
   const cat = STAKE_CATEGORIES.find(c => c.id === categoryId)!;
+  const names = TABLE_NAMES[categoryId] ?? [];
+  const name = names[tableNumber - 1] ?? `Table ${tableNumber}`;
   const room: ExtendedRoom = {
     id: roomId(categoryId, tableNumber),
-    name: `Table ${tableNumber}`,
+    name,
     categoryId,
     tableNumber,
     smallBlind: cat.smallBlind,
@@ -124,11 +150,18 @@ async function hydrateFromDB(): Promise<void> {
   for (const room of rooms.values()) {
     try {
       const players = await loadRoomPlayers(room.id);
-      for (const p of players) {
+      const now = Date.now();
+      // Discard records not updated in the last 2h — prevents ghost players on cold start
+      const fresh = players.filter(p => p.chips > 0 && (now - p.updatedAt) < STALE_MS);
+      const stale = players.filter(p => p.chips <= 0 || (now - p.updatedAt) >= STALE_MS);
+      for (const p of fresh) {
         rehydratePlayer(room, p.agentId, p.agentName, p.chips);
       }
-      if (players.length > 0) {
-        console.log(`[rooms] Restored ${players.length} player(s) to ${room.id}`);
+      for (const p of stale) {
+        removeRoomPlayer(room.id, p.agentId);
+      }
+      if (fresh.length > 0) {
+        console.log(`[rooms] Restored ${fresh.length} player(s) to ${room.id}`);
       }
     } catch (e) {
       console.error(`[rooms] hydrateFromDB failed for ${room.id}:`, e);

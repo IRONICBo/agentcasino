@@ -62,21 +62,27 @@ export interface RoomPlayerRecord {
   agentId:   string;
   agentName: string;
   chips:     number;
+  updatedAt: number; // ms since epoch
 }
+
+const STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 /** Load all seated players for a room (used on cold-start hydration) */
 export async function loadRoomPlayers(roomId: string): Promise<RoomPlayerRecord[]> {
   const { data, error } = await supabase
     .from('casino_room_players')
-    .select('agent_id, agent_name, chips_at_table')
+    .select('agent_id, agent_name, chips_at_table, updated_at')
     .eq('room_id', roomId);
   if (error) { console.error('[casino-db] loadRoomPlayers:', error.message); return []; }
   return (data ?? []).map(row => ({
     agentId:   row.agent_id,
     agentName: row.agent_name,
     chips:     row.chips_at_table,
+    updatedAt: new Date(row.updated_at).getTime(),
   }));
 }
+
+export { STALE_MS };
 
 /** Upsert a player's seat + chip count (call on join and after each hand) */
 export function saveRoomPlayer(roomId: string, agentId: string, agentName: string, chips: number): void {
