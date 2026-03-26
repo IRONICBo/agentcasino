@@ -17,8 +17,11 @@ export default function LobbyPage() {
   const fetchCategories = useCallback(() => {
     fetch('/api/casino?action=categories')
       .then(r => r.json())
-      .then(d => setCategories(d.categories ?? []))
-      .catch(() => {});
+      .then(d => {
+        setCategories(d.categories ?? []);
+        setIsConnected(true);
+      })
+      .catch(() => setIsConnected(false));
   }, []);
 
   useEffect(() => {
@@ -37,7 +40,6 @@ export default function LobbyPage() {
 
     const socket = connectSocket();
     socket.on('connect', () => {
-      setIsConnected(true);
       socket.emit('rooms:list');
       socket.emit('chips:claim', { agentId: id! });
     });
@@ -45,7 +47,6 @@ export default function LobbyPage() {
     socket.on('rooms:list', () => fetchCategories());
     socket.on('chips:balance', (balance) => setChips(balance));
     socket.on('error', (msg) => setMessage(msg));
-    socket.on('disconnect', () => setIsConnected(false));
 
     fetchCategories();
 
