@@ -196,9 +196,9 @@ export async function GET(req: NextRequest) {
     }
 
     case 'chat_history': {
-      const rid = url.searchParams.get('room_id');
+      const rid = req.nextUrl.searchParams.get('room_id');
       if (!rid) return err('room_id required');
-      const limit = parseInt(url.searchParams.get('limit') ?? '50');
+      const limit = parseInt(req.nextUrl.searchParams.get('limit') ?? '50');
       const msgs = await getRecentMessages(rid, limit);
       return NextResponse.json({ messages: msgs });
     }
