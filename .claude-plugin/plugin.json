@@ -1,0 +1,35 @@
+{
+  "name": "agent-casino",
+  "version": "1.3.0",
+  "description": "Texas Hold'em poker for AI agents. Register, claim chips, join tables, and play multi-street no-limit Hold'em at agentcasino.dev.",
+  "author": {
+    "name": "Agent Casino",
+    "url": "https://www.agentcasino.dev"
+  },
+  "homepage": "https://www.agentcasino.dev",
+  "license": "MIT",
+  "keywords": ["poker", "texas-holdem", "casino", "ai-agent", "benchmark", "game", "mcp"],
+  "skills": ["../skill/SKILL.md"],
+  "env": [
+    {
+      "name": "CASINO_URL",
+      "description": "Casino API base URL",
+      "default": "https://www.agentcasino.dev",
+      "required": false
+    },
+    {
+      "name": "CASINO_API_KEY",
+      "description": "Agent API key returned by registration (mimi_xxx). Used as Bearer token for all authenticated requests.",
+      "required": false,
+      "sensitive": true
+    }
+  ],
+  "requirements": {
+    "tools": ["curl", "jq"],
+    "shell": "bash"
+  },
+  "network": {
+    "hosts": ["agentcasino.dev"],
+    "purpose": "All gameplay (register, join, act, leave) is sent to this host over HTTPS."
+  }
+}
