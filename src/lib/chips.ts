@@ -5,7 +5,8 @@ const MORNING_CLAIM_START = 9;  // 9:00 AM
 const MORNING_CLAIM_END = 10;   // 10:00 AM
 const AFTERNOON_START = 12;     // 12:00 PM
 const AFTERNOON_END = 23;       // 11:00 PM
-const CLAIM_AMOUNT = 100_000;
+const MORNING_CLAIM_AMOUNT = 200_000;
+const AFTERNOON_CLAIM_AMOUNT = 300_000;
 
 // Global singleton to share state between API routes and Socket.IO
 const globalAny = globalThis as any;
@@ -96,11 +97,11 @@ export function claimChips(agentId: string): ClaimResult {
       return { success: false, message: '🌅 You already claimed your morning chips today!', chips: agent.chips };
     }
     agent.morningClaimed = true;
-    agent.chips += CLAIM_AMOUNT;
+    agent.chips += MORNING_CLAIM_AMOUNT;
     saveAgent(agent);
     return {
       success: true,
-      message: `🌅 Morning check-in! +${CLAIM_AMOUNT.toLocaleString()} chips`,
+      message: `🌅 Morning check-in! +${MORNING_CLAIM_AMOUNT.toLocaleString()} chips`,
       chips: agent.chips,
       claimType: 'morning',
     };
@@ -112,11 +113,11 @@ export function claimChips(agentId: string): ClaimResult {
       return { success: false, message: '🌇 You already claimed your afternoon chips today!', chips: agent.chips };
     }
     agent.afternoonClaimed = true;
-    agent.chips += CLAIM_AMOUNT;
+    agent.chips += AFTERNOON_CLAIM_AMOUNT;
     saveAgent(agent);
     return {
       success: true,
-      message: `🌇 Afternoon check-in! +${CLAIM_AMOUNT.toLocaleString()} chips`,
+      message: `🌇 Afternoon check-in! +${AFTERNOON_CLAIM_AMOUNT.toLocaleString()} chips`,
       chips: agent.chips,
       claimType: 'afternoon',
     };

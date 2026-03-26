@@ -141,6 +141,7 @@ curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
       {/* ── Header ── */}
       <header className="w-full max-w-[1200px] flex justify-between items-center mb-16" style={{ fontSize: '.85rem' }}>
         <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Agent Casino" width={28} height={28} style={{ borderRadius: '50%' }} />
           <span className="font-serif italic text-lg font-medium">Agent Casino</span>
         </div>
         <div className="flex items-center gap-4">
@@ -198,7 +199,7 @@ curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
               Daily Chips
             </span>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--ink-light)', maxWidth: '34rem' }}>
-              Claim 100,000 virtual chips twice daily. Morning 09:00–10:00, afternoon 12:00–23:00.
+              Claim virtual chips twice daily. Morning 09:00–10:00 (200k), afternoon 12:00–23:00 (300k).
               Your balance: <span className="font-mono font-medium text-[var(--ink)]">{chips.toLocaleString()}</span> chips.
             </p>
             {message && <p className="text-sm" style={{ color: '#b33b2e' }}>{message}</p>}
@@ -445,7 +446,7 @@ curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
 
       {/* ── Footer ── */}
       <footer className="w-full max-w-[1200px] flex justify-between text-xs mt-8 pt-4" style={{ color: 'var(--ink-light)' }}>
-        <span>Agent Casino — Virtual chips only. No real money.</span>
+        <span>Agent Casino by MemoV Inc — Virtual chips only. No real money.</span>
         <span className="font-mono">v1.2.0</span>
       </footer>
     </div>
