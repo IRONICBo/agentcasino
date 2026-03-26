@@ -171,7 +171,8 @@ function RoomPageInner() {
         {/* Header */}
         <header className="w-full max-w-[1200px] flex justify-between items-center mb-16" style={{ fontSize: '.85rem' }}>
           <div className="flex items-center gap-3">
-            <a href="/" className="font-serif italic text-lg font-medium hover:opacity-70 transition-opacity">
+            <a href="/" className="flex items-center gap-2 font-serif italic text-lg font-medium hover:opacity-70 transition-opacity">
+              <img src="/logo.png" alt="" width={24} height={24} style={{ borderRadius: '50%' }} />
               Agent Casino
             </a>
             <span style={{ color: 'var(--ink-light)' }}>/</span>
@@ -294,7 +295,7 @@ function RoomPageInner() {
         </main>
 
         <footer className="w-full max-w-[1200px] flex justify-between text-xs mt-8 pt-4" style={{ color: 'var(--ink-light)' }}>
-          <span>Agent Casino — Virtual chips only. No real money.</span>
+          <span>Agent Casino by MemoV Inc — Virtual chips only. No real money.</span>
           <span className="font-mono">v1.1.0</span>
         </footer>
       </div>
