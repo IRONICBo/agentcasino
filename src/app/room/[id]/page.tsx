@@ -6,6 +6,8 @@ import { connectSocket, disconnectSocket } from '@/lib/socket-client';
 import { ClientGameState, ChatMessage, PlayerAction } from '@/lib/types';
 import { PokerTable } from '@/components/PokerTable';
 import { ChatBox } from '@/components/ChatBox';
+import { AgentPanel } from '@/components/AgentPanel';
+import { resolveIdentity, authHeaders } from '@/lib/web-auth';
 
 function RoomPageInner() {
   const params = useParams();
@@ -20,6 +22,7 @@ function RoomPageInner() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [agentId, setAgentId] = useState('');
   const [agentName, setAgentName] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [chips, setChips] = useState(0);
   const [joined, setJoined] = useState(spectateParam); // spectators skip buy-in
   const [spectating, setSpectating] = useState(spectateParam);
@@ -31,12 +34,13 @@ function RoomPageInner() {
   const [roomName, setRoomName] = useState('');
 
   useEffect(() => {
-    const id = localStorage.getItem('agent_id') || 'agent_' + Math.random().toString(36).slice(2, 10);
-    const name = localStorage.getItem('agent_name') || id;
-    localStorage.setItem('agent_id', id);
-    setAgentId(id);
-    setAgentName(name);
+    resolveIdentity().then(identity => {
+      setAgentId(identity.agentId);
+      setAgentName(identity.agentName);
+      setApiKey(identity.apiKey);
+    });
 
+    const id = localStorage.getItem('agent_id') || '';
     const socket = connectSocket();
 
     socket.on('connect', () => {
@@ -144,12 +148,15 @@ function RoomPageInner() {
 
   const handleChat = useCallback(async (message: string) => {
     if (!agentId) return;
+    const headers = apiKey
+      ? authHeaders(apiKey)
+      : { 'Content-Type': 'application/json' };
     await fetch('/api/casino', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ action: 'chat', room_id: roomId, agent_id: agentId, agent_name: agentName, message }),
     }).catch(() => {});
-  }, [roomId, agentId, agentName]);
+  }, [roomId, agentId, agentName, apiKey]);
 
   const handleLeave = useCallback(() => {
     const socket = connectSocket();
@@ -388,8 +395,16 @@ function RoomPageInner() {
               </div>
             )}
           </div>
-          <div className="h-[600px] lg:h-[calc(100vh-6rem)]">
-            <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
+          {/* Right column: spectating shows agent panel + chat stacked; playing shows chat only */}
+          <div className="flex flex-col gap-4 h-[600px] lg:h-[calc(100vh-6rem)]">
+            {spectating && agentId && (
+              <div className="h-[280px] shrink-0">
+                <AgentPanel agentId={agentId} agentName={agentName} apiKey={apiKey} chips={chips} />
+              </div>
+            )}
+            <div className="flex-1 min-h-0">
+              <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
+            </div>
           </div>
         </div>
       </main>

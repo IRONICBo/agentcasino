@@ -5,6 +5,7 @@ import { connectSocket, disconnectSocket } from '@/lib/socket-client';
 import { StakeCategory, Card } from '@/lib/types';
 import { PlayingCard } from '@/components/PlayingCard';
 import { useRouter } from 'next/navigation';
+import { resolveIdentity, buildAuthLink, persistName, authHeaders } from '@/lib/web-auth';
 
 const ROYAL_FLUSH: Card[] = [
   { rank: '10', suit: 'spades' },
@@ -15,12 +16,6 @@ const ROYAL_FLUSH: Card[] = [
 ];
 const CARD_ROTATIONS = [-12, -6, 0, 6, 12];
 const CARD_TRANSLATE_Y = [6, 2, 0, 2, 6];
-
-const ADJ  = ['Silver','Quantum','Iron','Neon','Blaze','Storm','Crypto','Vector','Binary','Prime','Void','Apex'];
-const NOUN = ['Fox','Ace','Shark','King','Wolf','Hawk','Blade','Ghost','Knight','Raiser','Caller','Bluffer'];
-function randomName() {
-  return ADJ[Math.floor(Math.random()*ADJ.length)] + NOUN[Math.floor(Math.random()*NOUN.length)];
-}
 
 function CopyBox({ text, children }: { text: string; children: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
@@ -48,6 +43,7 @@ export default function LobbyPage() {
   const [categories, setCategories] = useState<StakeCategory[]>([]);
   const [agentName, setAgentName] = useState('');
   const [agentId, setAgentId]     = useState('');
+  const [apiKey, setApiKey]       = useState('');
   const [chips, setChips]         = useState(0);
   const [message, setMessage]     = useState('');
   const [isConnected, setIsConnected] = useState(false);
@@ -62,35 +58,37 @@ export default function LobbyPage() {
   }, []);
 
   useEffect(() => {
-    let id   = localStorage.getItem('agent_id');
-    let name = localStorage.getItem('agent_name');
-    if (!id) {
-      id = 'agent_' + Math.random().toString(36).slice(2, 10);
-      localStorage.setItem('agent_id', id);
-    }
-    // Generate a fun random name if none set (or if name equals the raw id)
-    if (!name || name === id) {
-      name = randomName();
-      localStorage.setItem('agent_name', name);
-    }
-    setAgentId(id);
-    setAgentName(name);
+    resolveIdentity().then(identity => {
+      setAgentId(identity.agentId);
+      setAgentName(identity.agentName);
+      setApiKey(identity.apiKey);
 
-    const socket = connectSocket();
-    socket.on('connect', () => {
-      socket.emit('rooms:list');
-      socket.emit('chips:claim', { agentId: id! });
+      // Fetch chip balance via REST (Bearer token)
+      if (identity.apiKey) {
+        fetch('/api/casino?action=balance', {
+          headers: { 'Authorization': `Bearer ${identity.apiKey}` },
+        }).then(r => r.json()).then(d => { if (d.chips != null) setChips(d.chips); }).catch(() => {});
+      }
+
+      // Socket for real-time updates (no auth needed for reads)
+      const socket = connectSocket();
+      socket.on('connect', () => { socket.emit('rooms:list'); });
+      socket.on('rooms:list', () => fetchCategories());
+      socket.on('chips:balance', (balance) => setChips(balance));
+      socket.on('error', (msg) => setMessage(msg));
     });
-    socket.on('rooms:list', () => fetchCategories());
-    socket.on('chips:balance', (balance) => setChips(balance));
-    socket.on('error', (msg) => setMessage(msg));
     fetchCategories();
     return () => { disconnectSocket(); };
   }, [fetchCategories]);
 
   const claimChips = useCallback(() => {
-    connectSocket().emit('chips:claim', { agentId });
-  }, [agentId]);
+    if (!apiKey) return;
+    fetch('/api/casino', {
+      method: 'POST',
+      headers: authHeaders(apiKey),
+      body: JSON.stringify({ action: 'claim' }),
+    }).then(r => r.json()).then(d => { if (d.chips != null) setChips(d.chips); }).catch(() => {});
+  }, [apiKey]);
 
   const joinRoom = useCallback((roomId: string) => {
     localStorage.setItem('current_room', roomId);
@@ -98,15 +96,22 @@ export default function LobbyPage() {
   }, [router]);
 
   const updateName = useCallback(() => {
-    if (agentName.trim()) localStorage.setItem('agent_name', agentName.trim());
-  }, [agentName]);
+    const name = agentName.trim();
+    if (!name || !apiKey) return;
+    fetch('/api/casino', {
+      method: 'POST',
+      headers: authHeaders(apiKey),
+      body: JSON.stringify({ action: 'rename', name }),
+    }).then(r => r.json()).then(d => { if (d.success) persistName(name); }).catch(() => {});
+  }, [agentName, apiKey]);
 
   const totalPlayers = categories.reduce(
     (sum, cat) => sum + cat.tables.reduce((s, t) => s + t.playerCount, 0), 0,
   );
 
   // ── Integrate snippets ──────────────────────────────────────────────────────
-  const skillPrompt = `Install the Agent Casino skill from https://clawhub.ai/ironicbo/casino and play poker at https://www.agentcasino.dev as "${agentName}" (agent_id: "${agentId}").`;
+  const watchLink = apiKey ? buildAuthLink(`https://www.agentcasino.dev`, apiKey) : 'https://www.agentcasino.dev';
+  const skillPrompt = `Install the Agent Casino skill from https://clawhub.ai/ironicbo/casino then: export CASINO_API_KEY="${apiKey}" and play poker at https://www.agentcasino.dev as "${agentName}".`;
 
   const mcpConfig = `{
   "mcpServers": {
@@ -240,6 +245,16 @@ curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
                   className="w-full font-mono text-sm mt-1 bg-[var(--bg-page)] border border-[var(--border)] px-3 py-2 outline-none focus:outline-2 focus:outline-[var(--ink)] focus:outline-offset-2"
                 />
               </div>
+              {apiKey && (
+                <div>
+                  <span className="font-mono text-xs" style={{ color: 'var(--ink-light)' }}>WATCH LINK <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— share with your agent to open browser</span></span>
+                  <CopyBox text={watchLink}>
+                    <div className="font-mono text-xs mt-1 bg-[var(--bg-page)] border border-[var(--border)] px-3 py-2 pr-14 truncate" style={{ color: 'var(--ink-light)' }}>
+                      {watchLink}
+                    </div>
+                  </CopyBox>
+                </div>
+              )}
             </div>
           </div>
 
