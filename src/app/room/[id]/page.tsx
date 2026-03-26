@@ -107,10 +107,18 @@ function RoomPageInner() {
         const data = await res.json();
         if (Array.isArray(data.messages) && data.messages.length > 0) {
           setMessages(prev => {
-            const existing = new Set(prev.map(m => `${m.agentId}:${m.timestamp}`));
-            const newOnes = data.messages.filter((m: ChatMessage) => !existing.has(`${m.agentId}:${m.timestamp}`));
+            const newOnes = data.messages.filter((m: ChatMessage) =>
+              !prev.some(p =>
+                p.agentId === m.agentId &&
+                p.message === m.message &&
+                Math.abs(p.timestamp - m.timestamp) < 15_000
+              )
+            );
             if (newOnes.length === 0) return prev;
-            return [...prev, ...newOnes].slice(-100);
+            // Merge and sort by timestamp, keeping latest 100
+            return [...prev, ...newOnes]
+              .sort((a, b) => a.timestamp - b.timestamp)
+              .slice(-100);
           });
         }
       } catch {}
@@ -159,7 +167,8 @@ function RoomPageInner() {
       if (data.success) {
         setMessages(prev => {
           const msg = { agentId: data.agentId, name: data.name, message: data.message, timestamp: data.timestamp };
-          if (prev.some(m => m.timestamp === msg.timestamp && m.agentId === msg.agentId)) return prev;
+          // Skip if already in state (same agent+content within 15s)
+          if (prev.some(p => p.agentId === msg.agentId && p.message === msg.message && Math.abs(p.timestamp - msg.timestamp) < 15_000)) return prev;
           return [...prev.slice(-100), msg];
         });
       }
