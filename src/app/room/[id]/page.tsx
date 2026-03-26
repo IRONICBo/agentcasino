@@ -119,9 +119,24 @@ function RoomPageInner() {
     return () => clearInterval(interval);
   }, [joined, roomId]);
 
-  // Fetch all rooms for the room switcher
+  // Heartbeat — keep player's DB seat row fresh so it isn't cleaned up as stale
   useEffect(() => {
-    fetch('/api/casino?action=rooms')
+    if (!joined || spectating || !apiKey) return;
+    const beat = () => {
+      fetch('/api/casino', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(apiKey) },
+        body: JSON.stringify({ action: 'heartbeat', room_id: roomId }),
+      }).catch(() => {});
+    };
+    beat();
+    const interval = setInterval(beat, 2 * 60 * 1000); // every 2 minutes
+    return () => clearInterval(interval);
+  }, [joined, spectating, apiKey, roomId]);
+
+  // Fetch all rooms for the room switcher (full list — agents and room page always need all)
+  useEffect(() => {
+    fetch('/api/casino?action=rooms&view=all')
       .then(r => r.json())
       .then(d => setAllRooms(d.rooms ?? []))
       .catch(() => {});

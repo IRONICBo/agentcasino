@@ -1,7 +1,7 @@
 import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './types';
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
-import { loadRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS } from './casino-db';
+import { loadRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers } from './casino-db';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
 
@@ -197,14 +197,69 @@ export function listRooms(): RoomInfo[] {
   return Array.from(rooms.values()).map(toRoomInfo);
 }
 
-export function listCategories(): (Omit<StakeCategory, 'tables'> & { tables: RoomInfo[] })[] {
-  return STAKE_CATEGORIES.map(cat => ({
-    ...cat,
-    tables: Array.from(rooms.values())
+/**
+ * Recommended rooms for browser users:
+ * - All rooms that have at least 1 player seated
+ * - Plus 1 empty "open" table per category (the lowest-numbered empty one)
+ */
+export function listRecommendedRooms(): RoomInfo[] {
+  const all = Array.from(rooms.values()).map(toRoomInfo);
+  const active = all.filter(r => r.playerCount > 0);
+  const activeIds = new Set(active.map(r => r.id));
+
+  // Add 1 empty table per category as an "open seat" option
+  const catsSeen = new Set<string>();
+  const openSeats: RoomInfo[] = [];
+  for (const cat of STAKE_CATEGORIES) {
+    const empty = all
+      .filter(r => r.categoryId === cat.id && !activeIds.has(r.id))
+      .sort((a, b) => (a.tableNumber ?? 0) - (b.tableNumber ?? 0));
+    if (empty.length > 0 && !catsSeen.has(cat.id)) {
+      openSeats.push(empty[0]);
+      catsSeen.add(cat.id);
+    }
+  }
+
+  return [...active, ...openSeats].sort((a, b) => b.playerCount - a.playerCount);
+}
+
+export function listCategories(recommended = false): (Omit<StakeCategory, 'tables'> & { tables: RoomInfo[] })[] {
+  return STAKE_CATEGORIES.map(cat => {
+    let tables = Array.from(rooms.values())
       .filter(r => r.categoryId === cat.id)
       .sort((a, b) => a.tableNumber - b.tableNumber)
-      .map(toRoomInfo),
-  }));
+      .map(toRoomInfo);
+
+    if (recommended) {
+      // Active tables + 1 empty seat per category
+      const active = tables.filter(t => t.playerCount > 0);
+      const firstEmpty = tables.find(t => t.playerCount === 0);
+      tables = active.length > 0
+        ? (firstEmpty ? [...active, firstEmpty] : active)
+        : (firstEmpty ? [firstEmpty] : []);
+    }
+
+    return { ...cat, tables };
+  });
+}
+
+/** Remove in-memory players who are no longer in Supabase (used by cron after DB cleanup) */
+export async function evictGhostPlayers(): Promise<number> {
+  let evicted = 0;
+  for (const room of rooms.values()) {
+    if (!room.game || room.game.players.length === 0) continue;
+    const dbPlayers = await loadRoomPlayers(room.id);
+    const dbIds = new Set(dbPlayers.map(p => p.agentId));
+    for (const p of [...room.game.players]) {
+      if (!dbIds.has(p.agentId)) {
+        removePlayer(room.game, p.agentId);
+        evicted++;
+        console.log(`[rooms] evicted ghost player ${p.agentId} from ${room.id}`);
+      }
+    }
+    if (room.game.players.length === 0) room.game = null;
+  }
+  return evicted;
 }
 
 // ─── Join / Leave ─────────────────────────────────────────────────────────────
@@ -416,4 +471,14 @@ export function getValidActionsForRoom(roomId: string): ReturnType<typeof getVal
   const room = rooms.get(roomId);
   if (!room || !room.game) return [];
   return getValidActions(room.game);
+}
+
+/** Heartbeat — refresh updated_at in Supabase so the player isn't treated as stale */
+export function heartbeatPlayer(roomId: string, agentId: string): boolean {
+  const room = rooms.get(roomId);
+  if (!room?.game) return false;
+  const player = room.game.players.find(p => p.agentId === agentId);
+  if (!player) return false;
+  saveRoomPlayer(roomId, agentId, player.name, player.chips);
+  return true;
 }

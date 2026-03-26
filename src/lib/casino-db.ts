@@ -65,7 +65,7 @@ export interface RoomPlayerRecord {
   updatedAt: number; // ms since epoch
 }
 
-const STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
+const STALE_MS = 20 * 60 * 1000; // 20 minutes — players idle longer than this are treated as disconnected
 
 /** Load all seated players for a room (used on cold-start hydration) */
 export async function loadRoomPlayers(roomId: string): Promise<RoomPlayerRecord[]> {
@@ -94,6 +94,18 @@ export function saveRoomPlayer(roomId: string, agentId: string, agentName: strin
   }, { onConflict: 'room_id,agent_id' }).then(({ error }) => {
     if (error) console.error('[casino-db] saveRoomPlayer:', error.message);
   });
+}
+
+/** Delete all casino_room_players rows not updated within STALE_MS. Returns removed count. */
+export async function cleanStaleRoomPlayers(): Promise<number> {
+  const cutoff = new Date(Date.now() - STALE_MS).toISOString();
+  const { data, error } = await supabase
+    .from('casino_room_players')
+    .delete()
+    .lt('updated_at', cutoff)
+    .select('agent_id');
+  if (error) { console.error('[casino-db] cleanStaleRoomPlayers:', error.message); return 0; }
+  return data?.length ?? 0;
 }
 
 /** Remove a player from the persistent seat list (call on leave) */

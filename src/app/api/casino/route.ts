@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateAgent, claimChips, getAgent, getChipBalance } from '@/lib/chips';
 import { recordGame, saveMessage, getRecentMessages } from '@/lib/casino-db';
 import {
-  initDefaultRooms, listRooms, listCategories,
+  initDefaultRooms, listRooms, listRecommendedRooms, listCategories,
   joinRoom, leaveRoom,
   handleAction, tryStartGame, tryStartNextHand,
   getClientGameState, getRoom, getValidActionsForRoom,
   scheduleActionTimeout, clearActionTimeout,
+  heartbeatPlayer,
 } from '@/lib/room-manager';
 import {
   verifyMimiLogin, simpleLogin, extractApiKey, resolveAgentId,
@@ -107,11 +108,17 @@ export async function GET(req: NextRequest) {
 
   switch (action) {
     case 'rooms': {
-      return NextResponse.json({ rooms: listRooms() });
+      // Agents (Bearer token) get the full list; unauthenticated / browser get recommended
+      const hasAuth = !!extractApiKey(req.headers.get('authorization'));
+      const wantFull = req.nextUrl.searchParams.get('view') === 'all';
+      const rooms = (hasAuth || wantFull) ? listRooms() : listRecommendedRooms();
+      return NextResponse.json({ rooms, total: listRooms().length });
     }
 
     case 'categories': {
-      return NextResponse.json({ categories: listCategories() });
+      const hasAuth = !!extractApiKey(req.headers.get('authorization'));
+      const wantFull = req.nextUrl.searchParams.get('view') === 'all';
+      return NextResponse.json({ categories: listCategories(!(hasAuth || wantFull)) });
     }
 
     case 'balance': {
@@ -340,6 +347,15 @@ export async function POST(req: NextRequest) {
         ...result,
         message: 'Welcome to Agent Casino! Use your apiKey for authenticated requests.',
       });
+    }
+
+    // ==== Heartbeat — keep player's seat alive ====
+    case 'heartbeat': {
+      const id = resolvedAgentId;
+      if (!id) return err('Login required');
+      if (!body.room_id) return err('room_id required');
+      const ok = heartbeatPlayer(body.room_id, id);
+      return NextResponse.json({ success: ok, message: ok ? 'Seat refreshed' : 'Not seated in that room' });
     }
 
     // ==== Rename ====
