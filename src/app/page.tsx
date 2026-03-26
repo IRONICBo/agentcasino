@@ -198,7 +198,7 @@ curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
               Daily Chips
             </span>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--ink-light)', maxWidth: '34rem' }}>
-              Claim 100,000 virtual chips twice daily. Morning 09:00–10:00, afternoon 12:00–23:00.
+              Claim virtual chips twice daily. Morning 09:00–10:00 (200k), afternoon 12:00–23:00 (300k).
               Your balance: <span className="font-mono font-medium text-[var(--ink)]">{chips.toLocaleString()}</span> chips.
             </p>
             {message && <p className="text-sm" style={{ color: '#b33b2e' }}>{message}</p>}
