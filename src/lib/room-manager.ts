@@ -1,7 +1,7 @@
-import { v4 as uuid } from 'uuid';
 import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './types';
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
+import { loadRoomPlayers, saveRoomPlayer, removeRoomPlayer } from './casino-db';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
 
@@ -69,10 +69,15 @@ const actionTimeouts: Map<string, NodeJS.Timeout> = globalAny2.__casino_timeouts
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
+/** Deterministic room ID — stable across cold starts */
+function roomId(categoryId: string, tableNumber: number): string {
+  return `casino_${categoryId}_${tableNumber}`;
+}
+
 function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom {
   const cat = STAKE_CATEGORIES.find(c => c.id === categoryId)!;
   const room: ExtendedRoom = {
-    id: uuid(),
+    id: roomId(categoryId, tableNumber),
     name: `Table ${tableNumber}`,
     categoryId,
     tableNumber,
@@ -89,12 +94,44 @@ function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom
   return room;
 }
 
+/** Re-seat a player from DB without deducting chips (cold-start recovery only) */
+function rehydratePlayer(room: ExtendedRoom, agentId: string, agentName: string, chips: number): void {
+  if (!room.game) room.game = createGame(room.smallBlind, room.bigBlind);
+  if (room.game.players.find(p => p.agentId === agentId)) return; // already seated
+  if (room.game.players.length >= room.maxPlayers) return;
+  const taken = new Set(room.game.players.map(p => p.seatIndex));
+  let seat = -1;
+  for (let i = 0; i < room.maxPlayers; i++) { if (!taken.has(i)) { seat = i; break; } }
+  if (seat === -1) return;
+  // Ensure agent exists in memory
+  getOrCreateAgent(agentId, agentName);
+  addPlayer(room.game, agentId, agentName, chips, seat);
+}
+
 export function initDefaultRooms(): void {
   for (const cat of STAKE_CATEGORIES) {
     const existing = Array.from(rooms.values()).filter(r => r.categoryId === cat.id);
     const count = TABLES_PER_CATEGORY[cat.id] ?? 3;
     for (let i = existing.length + 1; i <= count; i++) {
       createFixedTable(cat.id, i);
+    }
+  }
+  // Async: restore seated players from Supabase after a cold start
+  hydrateFromDB();
+}
+
+async function hydrateFromDB(): Promise<void> {
+  for (const room of rooms.values()) {
+    try {
+      const players = await loadRoomPlayers(room.id);
+      for (const p of players) {
+        rehydratePlayer(room, p.agentId, p.agentName, p.chips);
+      }
+      if (players.length > 0) {
+        console.log(`[rooms] Restored ${players.length} player(s) to ${room.id}`);
+      }
+    } catch (e) {
+      console.error(`[rooms] hydrateFromDB failed for ${room.id}:`, e);
     }
   }
 }
@@ -178,6 +215,7 @@ export function joinRoom(roomId: string, agentId: string, agentName: string, buy
     return 'Failed to join table';
   }
 
+  saveRoomPlayer(roomId, agentId, agentName, buyIn);
   return null;
 }
 
@@ -191,6 +229,7 @@ export function leaveRoom(roomId: string, agentId: string): void {
   }
 
   room.spectators = room.spectators.filter(id => id !== agentId);
+  removeRoomPlayer(roomId, agentId);
 
   // Cancel any pending timeout if there aren't enough players left
   if (!room.game || room.game.players.length < 2) {
@@ -284,9 +323,15 @@ export function tryStartNextHand(roomId: string): boolean {
   if (room.game.phase !== 'showdown') return false;
   if (room.game.players.length < 2) return false;
 
+  // Persist chip counts after each completed hand (cold-start recovery)
+  for (const p of room.game.players) {
+    if (p.chips > 0) saveRoomPlayer(roomId, p.agentId, p.name, p.chips);
+  }
+
   const bustedPlayers = room.game.players.filter(p => p.chips === 0);
   for (const p of bustedPlayers) {
     removePlayer(room.game, p.agentId);
+    removeRoomPlayer(roomId, p.agentId);
   }
 
   if (room.game.players.length < 2) return false;

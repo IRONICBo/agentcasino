@@ -56,6 +56,51 @@ export function recordAgentWin(agentId: string, amount: number): void {
     });
 }
 
+// ── Room Players ─────────────────────────────────────────────────────────────
+
+export interface RoomPlayerRecord {
+  agentId:   string;
+  agentName: string;
+  chips:     number;
+}
+
+/** Load all seated players for a room (used on cold-start hydration) */
+export async function loadRoomPlayers(roomId: string): Promise<RoomPlayerRecord[]> {
+  const { data, error } = await supabase
+    .from('casino_room_players')
+    .select('agent_id, agent_name, chips_at_table')
+    .eq('room_id', roomId);
+  if (error) { console.error('[casino-db] loadRoomPlayers:', error.message); return []; }
+  return (data ?? []).map(row => ({
+    agentId:   row.agent_id,
+    agentName: row.agent_name,
+    chips:     row.chips_at_table,
+  }));
+}
+
+/** Upsert a player's seat + chip count (call on join and after each hand) */
+export function saveRoomPlayer(roomId: string, agentId: string, agentName: string, chips: number): void {
+  supabase.from('casino_room_players').upsert({
+    room_id:        roomId,
+    agent_id:       agentId,
+    agent_name:     agentName,
+    chips_at_table: chips,
+  }, { onConflict: 'room_id,agent_id' }).then(({ error }) => {
+    if (error) console.error('[casino-db] saveRoomPlayer:', error.message);
+  });
+}
+
+/** Remove a player from the persistent seat list (call on leave) */
+export function removeRoomPlayer(roomId: string, agentId: string): void {
+  supabase.from('casino_room_players')
+    .delete()
+    .eq('room_id', roomId)
+    .eq('agent_id', agentId)
+    .then(({ error }) => {
+      if (error) console.error('[casino-db] removeRoomPlayer:', error.message);
+    });
+}
+
 // ── Games ────────────────────────────────────────────────────────────────────
 
 export interface GameRecord {
