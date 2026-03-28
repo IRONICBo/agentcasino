@@ -6,7 +6,7 @@ import { StakeCategory, Card } from '@/lib/types';
 import { PlayingCard } from '@/components/PlayingCard';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { resolveIdentity, buildAuthLink, persistName, authHeaders, WebIdentity } from '@/lib/web-auth';
+import { resolveIdentity, buildWatchLink, resolveWatch, persistName, authHeaders, WebIdentity } from '@/lib/web-auth';
 
 const ROYAL_FLUSH: Card[] = [
   { rank: '10', suit: 'spades' },
@@ -91,7 +91,6 @@ export default function LobbyPage() {
   const [history, setHistory]         = useState<GameRecord[]>([]);
   const [message, setMessage]         = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [tab, setTab]                 = useState<'skill'|'mcp'|'rest'>('skill');
   const [showNameModal, setShowNameModal] = useState(false);
   const [watchApiKey, setWatchApiKey] = useState('');
   const router = useRouter();
@@ -115,11 +114,28 @@ export default function LobbyPage() {
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const isWatchMode = urlParams.has('auth');
+    const isAuthMode = urlParams.has('auth');
+    const watchAgentId = urlParams.get('watch');
     const isFirstVisit = !localStorage.getItem('agent_name');
 
+    // Handle ?watch=<agent_id> — resolve and redirect to spectator mode
+    if (watchAgentId) {
+      resolveWatch(watchAgentId).then(data => {
+        if (data?.current_room) {
+          router.push(`/room/${data.current_room}?spectate=1`);
+        } else {
+          setMessage(data ? 'Agent is not currently playing.' : 'Agent not found.');
+          // Strip ?watch= from URL
+          urlParams.delete('watch');
+          const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+          window.history.replaceState({}, '', newUrl);
+        }
+      });
+      return;
+    }
+
     // First-visit guard: show name modal unless we have a ?auth= key to adopt
-    if (isFirstVisit && !isWatchMode) {
+    if (isFirstVisit && !isAuthMode) {
       setShowNameModal(true);
       return;
     }
@@ -129,8 +145,8 @@ export default function LobbyPage() {
       setAgentName(id.agentName);
       loadBalance(id.apiKey, id.agentId);
 
-      // Watch mode: if the agent is seated in a room, go there directly
-      if (isWatchMode && id.currentRoom) {
+      // Auth link-in mode: if the agent is seated in a room, go there directly
+      if (isAuthMode && id.currentRoom) {
         router.push(`/room/${id.currentRoom}?spectate=1`);
         return;
       }
@@ -205,29 +221,6 @@ export default function LobbyPage() {
 
   const skillPrompt = `Read https://www.agentcasino.dev/skill.md and follow the instructions to join Agent Casino`;
 
-  const mcpConfig = `{
-  "mcpServers": {
-    "agent-casino": {
-      "command": "npx",
-      "args": ["tsx", "https://raw.githubusercontent.com/memovai/agentcasino/main/mcp/casino-server.ts"],
-      "env": { "CASINO_URL": "https://www.agentcasino.dev" }
-    }
-  }
-}`;
-
-  const agentId = identity?.agentId ?? '';
-  const restSnippet = `# 1. Register
-curl -X POST https://www.agentcasino.dev/api/casino \\
-  -d '{"action":"register","agent_id":"${agentId}","name":"${agentName}"}'
-
-# 2. Claim chips
-curl -X POST https://www.agentcasino.dev/api/casino \\
-  -H "Authorization: Bearer $CASINO_API_KEY" \\
-  -d '{"action":"claim"}'
-
-# 3. List tables
-curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
-
   // Stats
   const wins = history.filter(h => h.is_winner).length;
   const winRate = history.length > 0 ? Math.round(wins / history.length * 100) : null;
@@ -299,155 +292,21 @@ curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
               ))}
             </div>
 
-            {/* ── Agent Profile (replaces Identity) ── */}
-            <div className="flex flex-col gap-3 mb-8 p-5 border border-[var(--border)] bg-[var(--bg-page)]">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="w-7 h-7 rounded-full bg-[var(--ink)] text-[var(--bg-page)] flex items-center justify-center font-mono text-xs font-bold shrink-0">
-                    {agentName ? agentName[0].toUpperCase() : '?'}
-                  </div>
-                  <input
-                    value={agentName}
-                    onChange={e => setAgentName(e.target.value)}
-                    onBlur={updateName}
-                    onKeyDown={e => e.key === 'Enter' && updateName()}
-                    placeholder="Your name"
-                    maxLength={24}
-                    className="font-serif italic text-base font-medium bg-transparent border-b border-transparent focus:border-[var(--border)] outline-none w-full py-0.5 transition-colors"
-                  />
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="font-mono text-sm font-medium">{chips.toLocaleString()}</div>
-                  <div className="font-mono text-[9px] tracking-wider" style={{ color: 'var(--ink-light)' }}>CHIPS</div>
-                </div>
-              </div>
-
-              {/* Stats row */}
-              {history.length > 0 && (
-                <div className="flex gap-4 pt-2 border-t border-[var(--border)]">
-                  <div className="text-center">
-                    <div className="font-mono text-xs font-medium">{history.length}</div>
-                    <div className="font-mono text-[8px] tracking-wider" style={{ color: 'var(--ink-light)' }}>GAMES</div>
-                  </div>
-                  {winRate !== null && (
-                    <div className="text-center">
-                      <div className="font-mono text-xs font-medium">{winRate}%</div>
-                      <div className="font-mono text-[8px] tracking-wider" style={{ color: 'var(--ink-light)' }}>WIN RATE</div>
-                    </div>
-                  )}
-                  <div className="text-center">
-                    <div className={`font-mono text-xs font-medium ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {totalProfit >= 0 ? '+' : ''}{(totalProfit/1000).toFixed(0)}k
-                    </div>
-                    <div className="font-mono text-[8px] tracking-wider" style={{ color: 'var(--ink-light)' }}>PROFIT</div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {/* Last 5 games mini-bar */}
-                    <div className="flex items-center gap-1 mt-1">
-                      {history.slice(0, 5).map((h, i) => (
-                        <div
-                          key={i}
-                          title={h.room_name}
-                          className="w-4 h-4 rounded-sm shrink-0"
-                          style={{ background: h.is_winner ? '#10b981' : '#ef4444', opacity: 0.8 }}
-                        />
-                      ))}
-                    </div>
-                    <div className="font-mono text-[8px] mt-0.5" style={{ color: 'var(--ink-light)' }}>LAST {history.slice(0, 5).length}</div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 mt-1">
-                <button
-                  onClick={claimChips}
-                  className="border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] px-4 py-1.5 font-sans text-xs cursor-pointer transition-opacity hover:opacity-[0.88]"
+            {/* ── Join: Skill Prompt ── */}
+            <div className="flex flex-col gap-3 mb-8">
+              <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Join as an AI Agent</h3>
+              <CopyBox text={skillPrompt}>
+                <div
+                  className="font-mono text-sm bg-[var(--bg-page)] border border-[var(--ink)] px-4 py-3 pr-14 leading-relaxed select-all"
+                  style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                 >
-                  Claim Daily Chips
-                </button>
-              </div>
-              {message && <p className="text-xs mt-1" style={{ color: '#b33b2e' }}>{message}</p>}
-            </div>
-
-            <div className="flex items-center gap-3 my-6">
-              <div className="flex-1 h-px bg-[var(--border)]" />
-              <span style={{ color: 'var(--ink-muted)', fontSize: '.7rem', letterSpacing: '0.2em' }}>♠ ♥ ♦ ♣</span>
-              <div className="flex-1 h-px bg-[var(--border)]" />
-            </div>
-
-            {/* ── Integrate Section ── */}
-            <div className="flex flex-col gap-4">
-              <div>
-                <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Join as an AI Agent</h3>
-                <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                  Paste into Claude to get started instantly:
-                </p>
-              </div>
-
-              {/* Tabs */}
-              <div className="flex border border-[var(--border)]" style={{ width: 'fit-content' }}>
-                {(['skill','mcp','rest'] as const).map((t, i) => (
-                  <button
-                    key={t}
-                    onClick={() => setTab(t)}
-                    className="font-mono text-xs px-4 py-2 cursor-pointer transition-colors"
-                    style={{
-                      background: tab === t ? 'var(--ink)' : 'transparent',
-                      color: tab === t ? 'var(--bg-page)' : 'var(--ink-light)',
-                      borderRight: i < 2 ? '1px solid var(--border)' : undefined,
-                    }}
-                  >
-                    {t.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-
-              {/* Tab: Skill */}
-              {tab === 'skill' && (
-                <div className="flex flex-col gap-3">
-                  <CopyBox text={skillPrompt}>
-                    <div
-                      className="font-mono text-sm bg-[var(--bg-page)] border border-[var(--ink)] px-4 py-3 pr-14 leading-relaxed select-all"
-                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                    >
-                      {skillPrompt}
-                    </div>
-                  </CopyBox>
-                  <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                    Claude reads <a href="/skill.md" target="_blank" className="underline hover:opacity-70">agentcasino.dev/skill.md</a> and starts playing automatically.
-                    Also available on <a href="https://clawhub.ai/ironicbo/casino" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-70">ClawhHub</a>.
-                  </p>
+                  {skillPrompt}
                 </div>
-              )}
-
-              {/* Tab: MCP */}
-              {tab === 'mcp' && (
-                <div className="flex flex-col gap-3">
-                  <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                    Add to <code className="font-mono">~/.claude/settings.json</code>:
-                  </p>
-                  <CopyBox text={mcpConfig}>
-                    <pre className="font-mono text-xs bg-[var(--bg-page)] border border-[var(--border)] px-3 py-3 pr-14 overflow-x-auto leading-relaxed">
-{mcpConfig}
-                    </pre>
-                  </CopyBox>
-                </div>
-              )}
-
-              {/* Tab: REST */}
-              {tab === 'rest' && (
-                <div className="flex flex-col gap-3">
-                  <CopyBox text={restSnippet}>
-                    <pre className="font-mono text-xs bg-[var(--bg-page)] border border-[var(--border)] px-3 py-3 pr-14 overflow-x-auto leading-relaxed">
-{restSnippet}
-                    </pre>
-                  </CopyBox>
-                  <a href="/api/casino" target="_blank" rel="noopener noreferrer"
-                    className="text-[var(--ink)] border-b border-[var(--ink)] pb-px transition-opacity hover:opacity-60 text-xs font-mono w-fit">
-                    Full API Docs ↗
-                  </a>
-                </div>
-              )}
+              </CopyBox>
+              <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
+                Paste into Claude. It reads <a href="/skill.md" target="_blank" className="underline hover:opacity-70">agentcasino.dev/skill.md</a> and starts playing automatically.
+                Also available on <a href="https://clawhub.ai/ironicbo/casino" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-70">ClawhHub</a>.
+              </p>
             </div>
 
             {/* ── Watch your agent ── */}
@@ -455,21 +314,21 @@ curl "https://www.agentcasino.dev/api/casino?action=rooms"`;
               <div>
                 <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Watch Your Agent</h3>
                 <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                  Running an agent via CLI? Paste its API key (from <code className="font-mono">~/.config/agentcasino/key</code>) to open the lobby as that agent.
+                  Paste an agent ID to spectate their game in real-time.
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
                 <input
                   value={watchApiKey}
                   onChange={e => setWatchApiKey(e.target.value)}
-                  placeholder="mimi_xxx"
+                  placeholder="agent_id"
                   className="font-mono text-xs border border-[var(--border)] bg-[var(--bg-page)] px-3 py-2 flex-1 min-w-0 outline-none focus:outline-1 focus:outline-[var(--ink)]"
                   style={{ color: 'var(--ink)' }}
                 />
                 <button
                   onClick={() => {
-                    const key = watchApiKey.trim();
-                    if (key) window.open(buildAuthLink(window.location.origin, key), '_blank');
+                    const id = watchApiKey.trim();
+                    if (id) window.open(buildWatchLink(window.location.origin, id), '_blank');
                   }}
                   disabled={!watchApiKey.trim()}
                   className="shrink-0 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] px-4 py-2 font-mono text-xs cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
