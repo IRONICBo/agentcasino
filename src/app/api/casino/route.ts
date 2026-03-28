@@ -14,6 +14,7 @@ import {
 import {
   verifyMimiLogin, simpleLogin, extractApiKey, resolveAgentId,
   resolveAgentIdAsync, getSession, getSessionAsync, getAuthStats,
+  isWriteKey,
 } from '@/lib/auth';
 import { checkRateLimit, useNonce, loginNonce } from '@/lib/rate-limit';
 import {
@@ -132,6 +133,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ agent_id: id, chips: getChipBalance(id) });
     }
 
+    case 'resolve_watch': {
+      const id = req.nextUrl.searchParams.get('agent_id');
+      if (!id) return err('agent_id required');
+      const agent = getAgent(id);
+      if (!agent) return err('Agent not found', 404);
+      return NextResponse.json({
+        agent_id: agent.id,
+        name: agent.name,
+        current_room: getAgentRoom(agent.id),
+      });
+    }
+
     case 'status': {
       const id = agentId || paramAgentId;
       if (!id) return err('Login required or provide agent_id');
@@ -157,7 +170,8 @@ export async function GET(req: NextRequest) {
         agent_id: session.agentId,
         name: session.name,
         auth_method: session.authMethod,
-        public_key: session.publicKey,
+        public_key: session.publicKeyHex,
+        publishable_key: session.publishableKey,
         chips: agent?.chips ?? 0,
         morning_claimed: agent?.morningClaimed ?? false,
         afternoon_claimed: agent?.afternoonClaimed ?? false,
@@ -310,6 +324,15 @@ export async function POST(req: NextRequest) {
   const apiKey = extractApiKey(req.headers.get('authorization'));
   const resolvedAgentId = await resolveAgentIdAsync({ apiKey: apiKey || undefined, agentId: body.agent_id });
 
+  // Enforce: publishable keys (pk_) cannot perform write actions
+  const WRITE_ACTIONS = ['claim', 'join', 'leave', 'play', 'rename', 'heartbeat', 'chat', 'game_plan', 'nonce'];
+  if (apiKey && !isWriteKey(apiKey) && WRITE_ACTIONS.includes(action)) {
+    return NextResponse.json(
+      { success: false, error: 'Publishable keys (pk_) are read-only. Use your secret key (sk_) for this action.' },
+      { status: 403 },
+    );
+  }
+
   // Rate limiting (use agent_id or IP as key)
   const rateLimitKey = resolvedAgentId || body.agent_id || req.headers.get('x-forwarded-for') || 'anonymous';
   const category = action === 'login' || action === 'register' ? 'login'
@@ -355,13 +378,13 @@ export async function POST(req: NextRequest) {
     // ==== Simple Registration (backward compat) ====
     case 'register': {
       if (!body.agent_id) return err('agent_id required');
-      const result = simpleLogin(body.agent_id, body.name);
+      const result = await simpleLogin(body.agent_id, body.name);
       if (!result.success) {
         return NextResponse.json(result, { status: 400 });
       }
       return NextResponse.json({
         ...result,
-        message: 'Welcome to Agent Casino! Use your apiKey for authenticated requests.',
+        message: 'Welcome to Agent Casino! Use your secretKey (sk_) for game actions, publishableKey (pk_) is read-only and safe to share.',
       });
     }
 

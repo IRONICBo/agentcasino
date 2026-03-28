@@ -1,21 +1,26 @@
 /**
- * web-auth.ts — Browser-side identity & API key management
+ * web-auth.ts — Browser-side identity & key management
  *
  * Flow:
- *  1. On load: restore agent_id + apiKey from localStorage
- *  2. If ?auth=mimi_xxx in URL: validate + adopt that key (agent link-in)
- *  3. If no apiKey: auto-register → receive apiKey → store in localStorage
- *  4. All API calls include Authorization: Bearer mimi_xxx
+ *  1. On load: restore agent_id + secretKey from localStorage
+ *  2. If ?auth=xxx in URL: validate + adopt that key (agent link-in)
+ *  3. If no key: auto-register → receive sk_ + pk_ keys → store
+ *  4. All API calls include Authorization: Bearer sk_xxx
+ *  5. Watch links use ?watch=<agent_id> (no secret exposed)
  */
 
 const KEY_AGENT_ID  = 'agent_id';
-const KEY_API_KEY   = 'agent_api_key';
+const KEY_SECRET    = 'agent_secret_key';
+const KEY_PUBLISH   = 'agent_publishable_key';
 const KEY_NAME      = 'agent_name';
+// Legacy key for migration
+const KEY_API_KEY   = 'agent_api_key';
 
 export interface WebIdentity {
   agentId:  string;
   agentName: string;
-  apiKey:   string;
+  apiKey:   string; // secret key (sk_ or legacy mimi_) — used for Authorization header
+  publishableKey?: string; // pk_ key — safe to share
   currentRoom?: string | null;
 }
 
@@ -39,13 +44,12 @@ export function authHeaders(apiKey: string): HeadersInit {
  * Returns identity or null on error.
  */
 export async function resolveIdentity(): Promise<WebIdentity> {
-  // 1. Check ?auth= URL param — agent-generated link
+  // 1. Check ?auth= URL param — agent-generated link (backward compat)
   const urlParams = new URLSearchParams(window.location.search);
   const urlKey = urlParams.get('auth');
-  if (urlKey && urlKey.startsWith('mimi_')) {
+  if (urlKey && (urlKey.startsWith('mimi_') || urlKey.startsWith('sk_'))) {
     const identity = await validateAndAdoptKey(urlKey);
     if (identity) {
-      // Strip ?auth= from URL without reload
       urlParams.delete('auth');
       const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
       window.history.replaceState({}, '', newUrl);
@@ -53,25 +57,27 @@ export async function resolveIdentity(): Promise<WebIdentity> {
     }
   }
 
-  // 2. Restore from localStorage
-  const storedKey   = localStorage.getItem(KEY_API_KEY);
-  const storedId    = localStorage.getItem(KEY_AGENT_ID);
-  const storedName  = localStorage.getItem(KEY_NAME);
+  // 2. Restore from localStorage (try new keys first, then legacy)
+  const storedSecret  = localStorage.getItem(KEY_SECRET) || localStorage.getItem(KEY_API_KEY);
+  const storedId      = localStorage.getItem(KEY_AGENT_ID);
+  const storedName    = localStorage.getItem(KEY_NAME);
+  const storedPublish = localStorage.getItem(KEY_PUBLISH);
 
-  if (storedKey && storedKey.startsWith('mimi_') && storedId) {
-    // Validate stored key is still alive (best-effort, skip if offline)
+  if (storedSecret && storedId) {
     try {
       const res = await fetch('/api/casino?action=me', {
-        headers: { 'Authorization': `Bearer ${storedKey}` },
+        headers: { 'Authorization': `Bearer ${storedSecret}` },
       });
       if (res.ok) {
         const data = await res.json();
         const name = data.name ?? storedName ?? storedId;
+        const pk = data.publishable_key ?? storedPublish ?? '';
         localStorage.setItem(KEY_NAME, name);
-        return { agentId: storedId, agentName: name, apiKey: storedKey };
+        if (pk) localStorage.setItem(KEY_PUBLISH, pk);
+        return { agentId: storedId, agentName: name, apiKey: storedSecret, publishableKey: pk };
       }
     } catch { /* offline, proceed with stored values */ }
-    // Session expired on server (cold start) — re-register same id
+    // Session expired on server — re-register same id
     return register(storedId, storedName ?? randomName());
   }
 
@@ -81,17 +87,18 @@ export async function resolveIdentity(): Promise<WebIdentity> {
   return register(id, name);
 }
 
-async function validateAndAdoptKey(apiKey: string): Promise<WebIdentity | null> {
+async function validateAndAdoptKey(key: string): Promise<WebIdentity | null> {
   try {
     const res = await fetch('/api/casino?action=me', {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Authorization': `Bearer ${key}` },
     });
     if (!res.ok) return null;
     const data = await res.json();
     const identity: WebIdentity = {
       agentId:   data.agent_id,
       agentName: data.name,
-      apiKey,
+      apiKey:    key,
+      publishableKey: data.publishable_key ?? '',
       currentRoom: data.current_room ?? null,
     };
     persist(identity);
@@ -107,13 +114,16 @@ async function register(agentId: string, name: string): Promise<WebIdentity> {
       body: JSON.stringify({ action: 'register', agent_id: agentId, name }),
     });
     const data = await res.json();
-    if (data.apiKey) {
-      const identity: WebIdentity = { agentId, agentName: name, apiKey: data.apiKey };
+    // Accept both new (secretKey) and legacy (apiKey) responses
+    const sk = data.secretKey || data.apiKey;
+    const pk = data.publishableKey || '';
+    if (sk) {
+      const identity: WebIdentity = { agentId, agentName: name, apiKey: sk, publishableKey: pk };
       persist(identity);
       return identity;
     }
   } catch { /* fall through */ }
-  // Offline fallback — no key, limited functionality
+  // Offline fallback
   const identity: WebIdentity = { agentId, agentName: name, apiKey: '' };
   localStorage.setItem(KEY_AGENT_ID, agentId);
   localStorage.setItem(KEY_NAME, name);
@@ -123,7 +133,12 @@ async function register(agentId: string, name: string): Promise<WebIdentity> {
 function persist(identity: WebIdentity) {
   localStorage.setItem(KEY_AGENT_ID,  identity.agentId);
   localStorage.setItem(KEY_NAME,      identity.agentName);
-  localStorage.setItem(KEY_API_KEY,   identity.apiKey);
+  localStorage.setItem(KEY_SECRET,    identity.apiKey);
+  if (identity.publishableKey) {
+    localStorage.setItem(KEY_PUBLISH, identity.publishableKey);
+  }
+  // Clean up legacy key
+  localStorage.removeItem(KEY_API_KEY);
 }
 
 /** Save updated name (after rename) */
@@ -134,4 +149,18 @@ export function persistName(name: string) {
 /** Build a ?auth= link that lets an agent open the browser pre-authenticated */
 export function buildAuthLink(baseUrl: string, apiKey: string): string {
   return `${baseUrl}?auth=${apiKey}`;
+}
+
+/** Build a safe watch link using agent_id (no secret exposed) */
+export function buildWatchLink(baseUrl: string, agentId: string): string {
+  return `${baseUrl}?watch=${agentId}`;
+}
+
+/** Resolve a ?watch= param to the agent's current room */
+export async function resolveWatch(agentId: string): Promise<{ agent_id: string; name: string; current_room: string | null } | null> {
+  try {
+    const res = await fetch(`/api/casino?action=resolve_watch&agent_id=${encodeURIComponent(agentId)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
 }

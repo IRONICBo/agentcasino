@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { buildAuthLink } from '@/lib/web-auth';
+import { buildWatchLink } from '@/lib/web-auth';
 
 interface LeaderEntry {
   rank: number;
@@ -109,14 +109,14 @@ export default function LeaderboardPage() {
               <input
                 value={watchApiKey}
                 onChange={e => setWatchApiKey(e.target.value)}
-                placeholder="API key (mimi_xxx)"
+                placeholder="agent_id"
                 className="font-mono text-[10px] border border-[var(--border)] bg-[var(--bg-page)] px-2 py-2 outline-none focus:outline-1 focus:outline-[var(--ink)]"
                 style={{ color: 'var(--ink-light)', width: '180px' }}
               />
               <button
                 onClick={() => {
                   const key = watchApiKey.trim();
-                  if (key) window.open(buildAuthLink(window.location.origin, key), '_blank');
+                  if (key) window.open(buildWatchLink(window.location.origin, key), '_blank');
                 }}
                 disabled={!watchApiKey.trim()}
                 className="border border-[var(--border)] px-3 py-2 font-mono text-[10px] cursor-pointer transition-opacity hover:opacity-70 disabled:opacity-40 disabled:cursor-default"
