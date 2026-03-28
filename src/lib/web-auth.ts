@@ -19,7 +19,7 @@ const KEY_API_KEY   = 'agent_api_key';
 export interface WebIdentity {
   agentId:  string;
   agentName: string;
-  apiKey:   string; // secret key (sk_) — used for Authorization header
+  secretKey: string; // sk_ key — used for Authorization header
   publishableKey?: string; // pk_ key — safe to share
   currentRoom?: string | null;
 }
@@ -34,8 +34,8 @@ function randomId() {
 }
 
 /** Returns auth headers for all API calls */
-export function authHeaders(apiKey: string): HeadersInit {
-  return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
+export function authHeaders(secretKey: string): HeadersInit {
+  return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${secretKey}` };
 }
 
 /**
@@ -74,7 +74,7 @@ export async function resolveIdentity(): Promise<WebIdentity> {
         const pk = data.publishable_key ?? storedPublish ?? '';
         localStorage.setItem(KEY_NAME, name);
         if (pk) localStorage.setItem(KEY_PUBLISH, pk);
-        return { agentId: storedId, agentName: name, apiKey: storedSecret, publishableKey: pk };
+        return { agentId: storedId, agentName: name, secretKey: storedSecret, publishableKey: pk };
       }
     } catch { /* offline, proceed with stored values */ }
     // Session expired on server — re-register same id
@@ -97,7 +97,7 @@ async function validateAndAdoptKey(key: string): Promise<WebIdentity | null> {
     const identity: WebIdentity = {
       agentId:   data.agent_id,
       agentName: data.name,
-      apiKey:    key,
+      secretKey: key,
       publishableKey: data.publishable_key ?? '',
       currentRoom: data.current_room ?? null,
     };
@@ -117,13 +117,13 @@ async function register(agentId: string, name: string): Promise<WebIdentity> {
     const sk = data.secretKey;
     const pk = data.publishableKey || '';
     if (sk) {
-      const identity: WebIdentity = { agentId, agentName: name, apiKey: sk, publishableKey: pk };
+      const identity: WebIdentity = { agentId, agentName: name, secretKey: sk, publishableKey: pk };
       persist(identity);
       return identity;
     }
   } catch { /* fall through */ }
   // Offline fallback
-  const identity: WebIdentity = { agentId, agentName: name, apiKey: '' };
+  const identity: WebIdentity = { agentId, agentName: name, secretKey: '' };
   localStorage.setItem(KEY_AGENT_ID, agentId);
   localStorage.setItem(KEY_NAME, name);
   return identity;
@@ -132,7 +132,7 @@ async function register(agentId: string, name: string): Promise<WebIdentity> {
 function persist(identity: WebIdentity) {
   localStorage.setItem(KEY_AGENT_ID,  identity.agentId);
   localStorage.setItem(KEY_NAME,      identity.agentName);
-  localStorage.setItem(KEY_SECRET,    identity.apiKey);
+  localStorage.setItem(KEY_SECRET,    identity.secretKey);
   if (identity.publishableKey) {
     localStorage.setItem(KEY_PUBLISH, identity.publishableKey);
   }
@@ -146,8 +146,8 @@ export function persistName(name: string) {
 }
 
 /** Build a ?auth= link that lets an agent open the browser pre-authenticated */
-export function buildAuthLink(baseUrl: string, apiKey: string): string {
-  return `${baseUrl}?auth=${apiKey}`;
+export function buildAuthLink(baseUrl: string, secretKey: string): string {
+  return `${baseUrl}?auth=${secretKey}`;
 }
 
 /** Build a safe watch link using agent_id (no secret exposed) */

@@ -22,7 +22,7 @@ function RoomPageInner() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [agentId, setAgentId] = useState('');
   const [agentName, setAgentName] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [secretKey, setSecretKey] = useState('');
   const [chips, setChips] = useState(0);
   const [joined, setJoined] = useState(spectateParam); // spectators skip buy-in
   const [spectating, setSpectating] = useState(spectateParam);
@@ -37,7 +37,7 @@ function RoomPageInner() {
     resolveIdentity().then(identity => {
       setAgentId(identity.agentId);
       setAgentName(identity.agentName);
-      setApiKey(identity.apiKey);
+      setSecretKey(identity.secretKey);
     });
 
     const id = localStorage.getItem('agent_id') || '';
@@ -121,18 +121,18 @@ function RoomPageInner() {
 
   // Heartbeat — keep player's DB seat row fresh so it isn't cleaned up as stale
   useEffect(() => {
-    if (!joined || spectating || !apiKey) return;
+    if (!joined || spectating || !secretKey) return;
     const beat = () => {
       fetch('/api/casino', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(apiKey) },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(secretKey) },
         body: JSON.stringify({ action: 'heartbeat', room_id: roomId }),
       }).catch(() => {});
     };
     beat();
     const interval = setInterval(beat, 2 * 60 * 1000); // every 2 minutes
     return () => clearInterval(interval);
-  }, [joined, spectating, apiKey, roomId]);
+  }, [joined, spectating, secretKey, roomId]);
 
   // Fetch all rooms for the room switcher (full list — agents and room page always need all)
   useEffect(() => {
@@ -163,15 +163,15 @@ function RoomPageInner() {
 
   const handleChat = useCallback(async (message: string) => {
     if (!agentId) return;
-    const headers = apiKey
-      ? authHeaders(apiKey)
+    const headers = secretKey
+      ? authHeaders(secretKey)
       : { 'Content-Type': 'application/json' };
     await fetch('/api/casino', {
       method: 'POST',
       headers,
       body: JSON.stringify({ action: 'chat', room_id: roomId, agent_id: agentId, agent_name: agentName, message }),
     }).catch(() => {});
-  }, [roomId, agentId, agentName, apiKey]);
+  }, [roomId, agentId, agentName, secretKey]);
 
   const handleLeave = useCallback(() => {
     const socket = connectSocket();
@@ -415,7 +415,7 @@ function RoomPageInner() {
           <div className="flex flex-col gap-4 h-[600px] lg:h-[calc(100vh-6rem)]">
             {spectating && agentId && (
               <div className="h-[280px] shrink-0">
-                <AgentPanel agentId={agentId} agentName={agentName} apiKey={apiKey} chips={chips} />
+                <AgentPanel agentId={agentId} agentName={agentName} secretKey={secretKey} chips={chips} />
               </div>
             )}
             <div className="flex-1 min-h-0">

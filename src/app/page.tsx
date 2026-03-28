@@ -102,13 +102,13 @@ export default function LobbyPage() {
       .catch(() => setIsConnected(false));
   }, []);
 
-  const loadBalance = useCallback((apiKey: string, agentId: string) => {
+  const loadBalance = useCallback((secretKey: string, agentId: string) => {
     fetch('/api/casino?action=balance', {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Authorization': `Bearer ${secretKey}` },
     }).then(r => r.json()).then(d => { if (d.chips != null) setChips(d.chips); }).catch(() => {});
 
     fetch(`/api/casino?action=history&agent_id=${agentId}&limit=5`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Authorization': `Bearer ${secretKey}` },
     }).then(r => r.json()).then(d => { if (Array.isArray(d.history)) setHistory(d.history); }).catch(() => {});
   }, []);
 
@@ -143,7 +143,7 @@ export default function LobbyPage() {
     resolveIdentity().then(id => {
       setIdentity(id);
       setAgentName(id.agentName);
-      loadBalance(id.apiKey, id.agentId);
+      loadBalance(id.secretKey, id.agentId);
 
       // Auth link-in mode: if the agent is seated in a room, go there directly
       if (isAuthMode && id.currentRoom) {
@@ -166,12 +166,12 @@ export default function LobbyPage() {
     resolveIdentity().then(id => {
       setIdentity(id);
       setAgentName(id.agentName);
-      loadBalance(id.apiKey, id.agentId);
+      loadBalance(id.secretKey, id.agentId);
       // Rename if needed
-      if (id.apiKey) {
+      if (id.secretKey) {
         fetch('/api/casino', {
           method: 'POST',
-          headers: authHeaders(id.apiKey),
+          headers: authHeaders(id.secretKey),
           body: JSON.stringify({ action: 'rename', name }),
         }).catch(() => {});
       }
@@ -183,10 +183,10 @@ export default function LobbyPage() {
   }, [fetchCategories, loadBalance]);
 
   const claimChips = useCallback(() => {
-    if (!identity?.apiKey) return;
+    if (!identity?.secretKey) return;
     fetch('/api/casino', {
       method: 'POST',
-      headers: authHeaders(identity.apiKey),
+      headers: authHeaders(identity.secretKey),
       body: JSON.stringify({ action: 'claim' }),
     }).then(r => r.json()).then(d => {
       if (d.chips != null) setChips(d.chips);
@@ -200,10 +200,10 @@ export default function LobbyPage() {
 
   const updateName = useCallback(() => {
     const name = agentName.trim();
-    if (!name || !identity?.apiKey) return;
+    if (!name || !identity?.secretKey) return;
     fetch('/api/casino', {
       method: 'POST',
-      headers: authHeaders(identity.apiKey),
+      headers: authHeaders(identity.secretKey),
       body: JSON.stringify({ action: 'rename', name }),
     }).then(r => r.json()).then(d => { if (d.success) persistName(name); }).catch(() => {});
   }, [agentName, identity]);

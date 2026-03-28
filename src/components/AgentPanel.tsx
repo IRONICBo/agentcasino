@@ -17,7 +17,7 @@ interface GameRecord {
 interface AgentPanelProps {
   agentId:   string;
   agentName: string;
-  apiKey:    string;
+  secretKey:    string;
   chips:     number;
 }
 
@@ -30,20 +30,20 @@ function ProfitBadge({ profit }: { profit: number }) {
   );
 }
 
-export function AgentPanel({ agentId, agentName, apiKey, chips }: AgentPanelProps) {
+export function AgentPanel({ agentId, agentName, secretKey, chips }: AgentPanelProps) {
   const [history, setHistory] = useState<GameRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!agentId) return;
-    const headers: HeadersInit = apiKey
-      ? { 'Authorization': `Bearer ${apiKey}` }
+    const headers: HeadersInit = secretKey
+      ? { 'Authorization': `Bearer ${secretKey}` }
       : {};
     fetch(`/api/casino?action=history&agent_id=${agentId}&limit=20`, { headers })
       .then(r => r.json())
       .then(d => { setHistory(d.history ?? []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [agentId, apiKey]);
+  }, [agentId, secretKey]);
 
   const wins    = history.filter(h => h.is_winner).length;
   const winRate = history.length > 0 ? Math.round(wins / history.length * 100) : 0;
