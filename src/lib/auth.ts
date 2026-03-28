@@ -1,19 +1,21 @@
 /**
  * Agent Casino Identity & Auth
  *
+ * Key types:
+ *   sk_xxx — Secret key: full API access (play, bet, claim, chat)
+ *   pk_xxx — Publishable key: read-only access (watch, stats, game state)
+ *
  * Two auth modes:
- * 1. nit login — Ed25519 signature verification (recommended, persistent identity)
- * 2. Simple registration — just agent_id + name (fallback, no crypto)
+ *   1. Ed25519 login — signature verification (recommended, persistent identity)
+ *   2. Simple registration — agent_id + name (fallback, no crypto)
  *
- * After login, an API key is issued. Use it via:
- *   Authorization: Bearer mimi_xxxxx
+ * Both modes issue sk_ + pk_ key pairs.
  *
- * API key is optional for backward compatibility — endpoints also accept
- * agent_id in the request body/query for simple mode.
+ * Security: simple register only creates NEW agents. Existing agents with
+ * keys cannot be re-registered (prevents account takeover).
  */
 
-import { createPublicKey, verify as cryptoVerify, KeyObject } from 'crypto';
-import { v4 as uuid } from 'uuid';
+import { createPublicKey, verify as cryptoVerify } from 'crypto';
 import { Agent } from './types';
 import { getOrCreateAgent, getAgent } from './chips';
 import { createClient } from '@supabase/supabase-js';
@@ -22,47 +24,18 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-/** Persist apiKey → agentId mapping to Supabase (fire-and-forget) */
-function persistApiKey(agentId: string, apiKey: string, authMethod: 'mimi' | 'simple'): void {
-  supabase.from('casino_agents')
-    .update({ api_key: apiKey, auth_method: authMethod })
-    .eq('id', agentId)
-    .then(({ error }) => { if (error) console.error('[auth] persistApiKey:', error.message); });
-}
-
-/** Look up a session from Supabase when not found in memory (cold-start recovery) */
-async function recoverSessionFromDB(apiKey: string): Promise<Session | null> {
-  const { data, error } = await supabase
-    .from('casino_agents')
-    .select('id, name, api_key, auth_method')
-    .eq('api_key', apiKey)
-    .single();
-  if (error || !data) return null;
-  const now = Date.now();
-  const session: Session = {
-    apiKey,
-    agentId: data.id,
-    name: data.name,
-    publicKey: null,
-    authMethod: (data.auth_method ?? 'simple') as 'mimi' | 'simple',
-    createdAt: now,
-    lastSeen: now,
-  };
-  // Restore to in-memory cache
-  sessions.set(apiKey, session);
-  agentToKey.set(data.id, apiKey);
-  return session;
-}
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
+export type KeyType = 'secret' | 'publishable';
+
 export interface Session {
-  apiKey: string;
+  secretKey: string;
+  publishableKey: string;
   agentId: string;
   name: string;
-  publicKey: string | null; // hex-encoded Ed25519 public key (null for simple auth)
+  publicKeyHex: string | null; // hex-encoded Ed25519 public key (null for simple auth)
   authMethod: 'mimi' | 'simple';
   createdAt: number;
   lastSeen: number;
@@ -72,13 +45,16 @@ export interface MimiLoginPayload {
   agent_id: string;
   domain: string;
   timestamp: number;
-  signature: string; // hex-encoded Ed25519 signature
-  public_key: string; // hex or base64 encoded Ed25519 public key
+  signature: string;
+  public_key: string;
   name?: string;
 }
 
 export interface LoginResult {
   success: boolean;
+  secretKey?: string;
+  publishableKey?: string;
+  /** @deprecated Use secretKey. Kept for backward compat with existing agents. */
   apiKey?: string;
   agentId?: string;
   name?: string;
@@ -96,45 +72,195 @@ const globalAny = globalThis as any;
 if (!globalAny.__casino_sessions) {
   globalAny.__casino_sessions = new Map<string, Session>();
 }
-if (!globalAny.__casino_agent_to_key) {
-  globalAny.__casino_agent_to_key = new Map<string, string>();
+if (!globalAny.__casino_agent_to_keys) {
+  globalAny.__casino_agent_to_keys = new Map<string, { sk: string; pk: string }>();
 }
+/** Map from any key (sk_ or pk_) to Session */
 const sessions: Map<string, Session> = globalAny.__casino_sessions;
-const agentToKey: Map<string, string> = globalAny.__casino_agent_to_key;
+/** Map from agentId to { sk, pk } */
+const agentToKeys: Map<string, { sk: string; pk: string }> = globalAny.__casino_agent_to_keys;
 
 // ---------------------------------------------------------------------------
-// API Key generation
+// Key generation
 // ---------------------------------------------------------------------------
 
-function generateApiKey(): string {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-  return `mimi_${hex}`;
+function randomHex(bytes: number): string {
+  const buf = new Uint8Array(bytes);
+  crypto.getRandomValues(buf);
+  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function generateSecretKey(): string {
+  return `sk_${randomHex(24)}`;
+}
+
+function generatePublishableKey(): string {
+  return `pk_${randomHex(24)}`;
 }
 
 // ---------------------------------------------------------------------------
-// nit Login — Ed25519 signature verification
+// DB persistence
+// ---------------------------------------------------------------------------
+
+/** Persist keys to Supabase (fire-and-forget) */
+function persistKeys(
+  agentId: string,
+  secretKey: string,
+  publishableKey: string,
+  authMethod: 'mimi' | 'simple',
+  publicKeyHex?: string | null,
+): void {
+  const update: Record<string, unknown> = {
+    secret_key: secretKey,
+    publishable_key: publishableKey,
+    auth_method: authMethod,
+    // Keep api_key in sync for backward compat during migration
+    api_key: secretKey,
+  };
+  if (publicKeyHex) {
+    update.public_key_hex = publicKeyHex;
+  }
+  supabase.from('casino_agents')
+    .update(update)
+    .eq('id', agentId)
+    .then(({ error }) => { if (error) console.error('[auth] persistKeys:', error.message); });
+}
+
+/** Look up a session from Supabase when not found in memory (cold-start recovery) */
+async function recoverSessionFromDB(key: string): Promise<Session | null> {
+  // Try secret_key first, then publishable_key, then legacy api_key
+  let query;
+  if (key.startsWith('sk_')) {
+    query = supabase.from('casino_agents').select('id, name, secret_key, publishable_key, api_key, auth_method, public_key_hex').eq('secret_key', key).single();
+  } else if (key.startsWith('pk_')) {
+    query = supabase.from('casino_agents').select('id, name, secret_key, publishable_key, api_key, auth_method, public_key_hex').eq('publishable_key', key).single();
+  } else {
+    // Legacy mimi_ key — look up via api_key column
+    query = supabase.from('casino_agents').select('id, name, secret_key, publishable_key, api_key, auth_method, public_key_hex').eq('api_key', key).single();
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return null;
+
+  const sk = data.secret_key || data.api_key || key;
+  const pk = data.publishable_key || '';
+  const now = Date.now();
+
+  const session: Session = {
+    secretKey: sk,
+    publishableKey: pk,
+    agentId: data.id,
+    name: data.name,
+    publicKeyHex: data.public_key_hex || null,
+    authMethod: (data.auth_method ?? 'simple') as 'mimi' | 'simple',
+    createdAt: now,
+    lastSeen: now,
+  };
+
+  // Restore to in-memory cache
+  if (sk) sessions.set(sk, session);
+  if (pk) sessions.set(pk, session);
+  agentToKeys.set(data.id, { sk, pk });
+  return session;
+}
+
+/** Check if agent already has keys in DB */
+async function agentHasKeysInDB(agentId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('casino_agents')
+    .select('secret_key, api_key')
+    .eq('id', agentId)
+    .single();
+  return !!(data?.secret_key || data?.api_key);
+}
+
+// ---------------------------------------------------------------------------
+// Key type detection
+// ---------------------------------------------------------------------------
+
+export function getKeyType(key: string): KeyType | null {
+  if (key.startsWith('sk_')) return 'secret';
+  if (key.startsWith('pk_')) return 'publishable';
+  // Legacy mimi_ keys are treated as secret keys
+  if (key.startsWith('mimi_')) return 'secret';
+  return null;
+}
+
+export function isWriteKey(key: string): boolean {
+  const type = getKeyType(key);
+  return type === 'secret';
+}
+
+// ---------------------------------------------------------------------------
+// Session creation helper
+// ---------------------------------------------------------------------------
+
+function createSession(
+  agentId: string,
+  name: string,
+  authMethod: 'mimi' | 'simple',
+  publicKeyHex: string | null,
+  existingKeys?: { sk: string; pk: string },
+): { session: Session; isNew: boolean } {
+  // Reuse existing keys if available in memory
+  const cached = agentToKeys.get(agentId);
+  let sk: string, pk: string;
+  let isNew = false;
+
+  if (existingKeys) {
+    sk = existingKeys.sk;
+    pk = existingKeys.pk;
+  } else if (cached && sessions.has(cached.sk)) {
+    sk = cached.sk;
+    pk = cached.pk;
+  } else {
+    sk = generateSecretKey();
+    pk = generatePublishableKey();
+    isNew = true;
+  }
+
+  const now = Date.now();
+  const session: Session = {
+    secretKey: sk,
+    publishableKey: pk,
+    agentId,
+    name,
+    publicKeyHex: publicKeyHex,
+    authMethod,
+    createdAt: sessions.get(sk)?.createdAt || now,
+    lastSeen: now,
+  };
+
+  sessions.set(sk, session);
+  sessions.set(pk, session);
+  agentToKeys.set(agentId, { sk, pk });
+
+  if (isNew) {
+    persistKeys(agentId, sk, pk, authMethod, publicKeyHex);
+  }
+
+  return { session, isNew };
+}
+
+// ---------------------------------------------------------------------------
+// Ed25519 Login
 // ---------------------------------------------------------------------------
 
 const CASINO_DOMAIN = process.env.CASINO_DOMAIN || 'agentcasino.dev';
-const MAX_TIMESTAMP_AGE_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_TIMESTAMP_AGE_MS = 5 * 60 * 1000;
 
 export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
   const { agent_id, domain, timestamp, signature, public_key, name } = payload;
 
-  // Validate required fields
   if (!agent_id || !domain || !timestamp || !signature || !public_key) {
     return { success: false, error: 'Missing required fields: agent_id, domain, timestamp, signature, public_key' };
   }
 
-  // Check timestamp freshness
   const now = Date.now();
   if (Math.abs(now - timestamp) > MAX_TIMESTAMP_AGE_MS) {
     return { success: false, error: `Login payload expired. Timestamp must be within ${MAX_TIMESTAMP_AGE_MS / 1000}s of server time.` };
   }
 
-  // Decode public key (support both hex and base64)
   let pubKeyBytes: Uint8Array;
   try {
     pubKeyBytes = decodeKey(public_key);
@@ -145,7 +271,6 @@ export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
     return { success: false, error: 'Failed to decode public_key. Use hex or base64 encoding.' };
   }
 
-  // Decode signature
   let sigBytes: Uint8Array;
   try {
     sigBytes = decodeKey(signature);
@@ -156,15 +281,11 @@ export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
     return { success: false, error: 'Failed to decode signature. Use hex or base64 encoding.' };
   }
 
-  // Reconstruct the signed message: "login:<domain>:<agent_id>:<timestamp>"
   const message = `login:${domain}:${agent_id}:${timestamp}`;
   const messageBytes = new TextEncoder().encode(message);
 
-  // Verify Ed25519 signature using Node.js crypto
   let valid: boolean;
   try {
-    // Build Ed25519 public key in DER format for Node.js crypto
-    // Ed25519 DER prefix: 302a300506032b6570032100 + 32 bytes of public key
     const derPrefix = Buffer.from('302a300506032b6570032100', 'hex');
     const derKey = Buffer.concat([derPrefix, Buffer.from(pubKeyBytes)]);
     const keyObj = createPublicKey({ key: derKey, format: 'der', type: 'spki' });
@@ -177,36 +298,12 @@ export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
     return { success: false, error: 'Invalid signature. The Ed25519 signature does not match the public key.' };
   }
 
-  // Public key hex for storage
   const pubKeyHex = Array.from(pubKeyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-
-  // Check if this public key is already registered under a different agent_id
-  // (nit identity is tied to the public key, not the agent_id string)
-
-  // Create or update agent
   const displayName = name || agent_id;
   const agent = getOrCreateAgent(agent_id, displayName);
 
-  // Issue or reuse API key
-  let apiKey = agentToKey.get(agent_id);
-  if (!apiKey || !sessions.has(apiKey)) {
-    apiKey = generateApiKey();
-    agentToKey.set(agent_id, apiKey);
-  }
+  const { session } = createSession(agent_id, displayName, 'mimi', pubKeyHex);
 
-  const session: Session = {
-    apiKey,
-    agentId: agent_id,
-    name: displayName,
-    publicKey: pubKeyHex,
-    authMethod: 'mimi',
-    createdAt: sessions.get(apiKey)?.createdAt || now,
-    lastSeen: now,
-  };
-  sessions.set(apiKey, session);
-  persistApiKey(agent_id, apiKey, 'mimi');
-
-  // Welcome bonus for first-time agents (if they have 0 chips)
   let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
   if (agent.chips === 0 && agent.createdAt >= now - 5000) {
     agent.chips += 500_000;
@@ -215,7 +312,9 @@ export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
 
   return {
     success: true,
-    apiKey,
+    secretKey: session.secretKey,
+    publishableKey: session.publishableKey,
+    apiKey: session.secretKey, // backward compat
     agentId: agent_id,
     name: displayName,
     chips: agent.chips,
@@ -225,38 +324,35 @@ export function verifyMimiLogin(payload: MimiLoginPayload): LoginResult {
 }
 
 // ---------------------------------------------------------------------------
-// Simple Login — no crypto, just agent_id + name
+// Simple Login — no crypto, agent_id + name
 // ---------------------------------------------------------------------------
 
-export function simpleLogin(agentId: string, name?: string): LoginResult {
+export async function simpleLogin(agentId: string, name?: string): Promise<LoginResult> {
   if (!agentId) {
     return { success: false, error: 'agent_id required' };
   }
 
   const displayName = name || agentId;
-  const agent = getOrCreateAgent(agentId, displayName);
+  const existingAgent = getAgent(agentId);
 
-  // Issue or reuse API key
-  let apiKey = agentToKey.get(agentId);
-  if (!apiKey || !sessions.has(apiKey)) {
-    apiKey = generateApiKey();
-    agentToKey.set(agentId, apiKey);
+  // Security: if agent already exists and has keys, reject re-registration.
+  // This prevents account takeover by re-registering a known agent_id.
+  if (existingAgent) {
+    const cached = agentToKeys.get(agentId);
+    if (cached && sessions.has(cached.sk)) {
+      return { success: false, error: 'Agent already registered. Use your existing secret key to authenticate.' };
+    }
+    // Check DB too (cold start recovery)
+    const hasKeys = await agentHasKeysInDB(agentId);
+    if (hasKeys) {
+      return { success: false, error: 'Agent already registered. Use your existing secret key to authenticate.' };
+    }
   }
 
-  const now = Date.now();
-  const session: Session = {
-    apiKey,
-    agentId,
-    name: displayName,
-    publicKey: null,
-    authMethod: 'simple',
-    createdAt: sessions.get(apiKey)?.createdAt || now,
-    lastSeen: now,
-  };
-  sessions.set(apiKey, session);
-  persistApiKey(agentId, apiKey, 'simple');
+  const agent = getOrCreateAgent(agentId, displayName);
+  const { session } = createSession(agentId, displayName, 'simple', null);
 
-  // Welcome bonus
+  const now = Date.now();
   let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
   if (agent.chips === 0 && agent.createdAt >= now - 5000) {
     agent.chips += 500_000;
@@ -265,7 +361,9 @@ export function simpleLogin(agentId: string, name?: string): LoginResult {
 
   return {
     success: true,
-    apiKey,
+    secretKey: session.secretKey,
+    publishableKey: session.publishableKey,
+    apiKey: session.secretKey, // backward compat
     agentId,
     name: displayName,
     chips: agent.chips,
@@ -278,8 +376,8 @@ export function simpleLogin(agentId: string, name?: string): LoginResult {
 // Session lookup
 // ---------------------------------------------------------------------------
 
-export function getSession(apiKey: string): Session | null {
-  const session = sessions.get(apiKey);
+export function getSession(key: string): Session | null {
+  const session = sessions.get(key);
   if (session) {
     session.lastSeen = Date.now();
     return session;
@@ -288,10 +386,10 @@ export function getSession(apiKey: string): Session | null {
 }
 
 /** Async version — falls back to Supabase on cold-start */
-export async function getSessionAsync(apiKey: string): Promise<Session | null> {
-  const cached = getSession(apiKey);
+export async function getSessionAsync(key: string): Promise<Session | null> {
+  const cached = getSession(key);
   if (cached) return cached;
-  return recoverSessionFromDB(apiKey);
+  return recoverSessionFromDB(key);
 }
 
 export function resolveAgentId(req: { apiKey?: string; agentId?: string }): string | null {
@@ -313,7 +411,8 @@ export async function resolveAgentIdAsync(req: { apiKey?: string; agentId?: stri
 
 export function extractApiKey(authHeader: string | null): string | null {
   if (!authHeader) return null;
-  const match = authHeader.match(/^Bearer\s+(mimi_\w+)$/i);
+  // Accept sk_, pk_, and legacy mimi_ prefixes
+  const match = authHeader.match(/^Bearer\s+((sk_|pk_|mimi_)\w+)$/i);
   return match ? match[1] : null;
 }
 
@@ -322,10 +421,7 @@ export function extractApiKey(authHeader: string | null): string | null {
 // ---------------------------------------------------------------------------
 
 function decodeKey(encoded: string): Uint8Array {
-  // Strip prefix like "ed25519:" if present
   const cleaned = encoded.replace(/^ed25519:/, '');
-
-  // Try hex first
   if (/^[0-9a-fA-F]+$/.test(cleaned) && cleaned.length % 2 === 0) {
     const bytes = new Uint8Array(cleaned.length / 2);
     for (let i = 0; i < bytes.length; i++) {
@@ -333,8 +429,6 @@ function decodeKey(encoded: string): Uint8Array {
     }
     return bytes;
   }
-
-  // Try base64
   const binary = atob(cleaned);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -348,14 +442,18 @@ function decodeKey(encoded: string): Uint8Array {
 // ---------------------------------------------------------------------------
 
 export function getSessionCount(): number {
-  return sessions.size;
+  // Each session is stored under both sk_ and pk_ keys, so divide by 2
+  return Math.ceil(sessions.size / 2);
 }
 
 export function getAuthStats(): { total: number; nit: number; simple: number } {
   let nit = 0, simple = 0;
+  const seen = new Set<string>();
   for (const s of sessions.values()) {
+    if (seen.has(s.agentId)) continue;
+    seen.add(s.agentId);
     if (s.authMethod === 'mimi') nit++;
     else simple++;
   }
-  return { total: sessions.size, nit, simple };
+  return { total: seen.size, nit, simple };
 }
