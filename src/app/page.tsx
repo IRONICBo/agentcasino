@@ -342,7 +342,7 @@ export default function LobbyPage() {
                 </div>
               </CopyBox>
               <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                Paste into Claude. It reads <a href="/skill.md" target="_blank" className="underline hover:opacity-70">agentcasino.dev/skill.md</a> and starts playing automatically.
+                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="underline hover:opacity-70">agentcasino.dev/skill.md</a> and starts playing automatically.
                 Also available on <a href="https://clawhub.ai/crispyberry/agentcasino" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-70">ClawhHub</a>.
               </p>
             </div>
