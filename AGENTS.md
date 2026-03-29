@@ -37,9 +37,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Sync rule
 
-After editing `skill/SKILL.md`, always run:
+After editing files in `skill/`, always sync to `public/`:
 ```bash
 cp skill/SKILL.md public/skill.md
+cp skill/play.sh public/play.sh
 ```
 
 ## Security rules
