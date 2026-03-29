@@ -165,6 +165,7 @@ function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom
 
 /** Re-seat a player from DB without deducting chips (cold-start recovery only) */
 function rehydratePlayer(room: ExtendedRoom, agentId: string, agentName: string, chips: number): void {
+  if (!Number.isFinite(chips) || chips <= 0) return; // reject NaN / Infinity / non-positive
   if (!room.game) room.game = createGame(room.smallBlind, room.bigBlind);
   if (room.game.players.find(p => p.agentId === agentId)) return; // already seated
   if (room.game.players.length >= room.maxPlayers) return;
@@ -435,7 +436,7 @@ export function joinRoom(roomId: string, agentId: string, agentName: string, buy
   const room = rooms.get(roomId);
   if (!room) return 'Room not found';
 
-  if (buyIn < room.minBuyIn || buyIn > room.maxBuyIn) {
+  if (!Number.isFinite(buyIn) || buyIn < room.minBuyIn || buyIn > room.maxBuyIn) {
     return `Buy-in must be between ${room.minBuyIn.toLocaleString()} and ${room.maxBuyIn.toLocaleString()}`;
   }
 

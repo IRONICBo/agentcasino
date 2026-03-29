@@ -66,19 +66,25 @@ export async function resolveIdentity(): Promise<WebIdentity> {
   }
 
   // 2. Restore from sessionStorage (sk_) + localStorage (id/name/pk_)
-  const storedSecret  = sessionStorage.getItem(KEY_SECRET) || localStorage.getItem(KEY_SECRET) || localStorage.getItem(KEY_API_KEY);
+  // Migrate: move sk_ from localStorage to sessionStorage immediately
+  // Remove from localStorage FIRST (before reading) so a crash never leaves sk_ persisted
+  const legacySecret = localStorage.getItem(KEY_SECRET);
+  const legacyApiKey = localStorage.getItem(KEY_API_KEY);
+  if (legacySecret) {
+    localStorage.removeItem(KEY_SECRET);  // Remove first (secure)
+    sessionStorage.setItem(KEY_SECRET, legacySecret);
+  }
+  if (legacyApiKey) {
+    localStorage.removeItem(KEY_API_KEY);  // Remove first (secure)
+    if (!sessionStorage.getItem(KEY_SECRET)) {
+      sessionStorage.setItem(KEY_SECRET, legacyApiKey);
+    }
+  }
+
+  const storedSecret  = sessionStorage.getItem(KEY_SECRET);
   const storedId      = localStorage.getItem(KEY_AGENT_ID);
   const storedName    = localStorage.getItem(KEY_NAME);
   const storedPublish = localStorage.getItem(KEY_PUBLISH);
-  // Migrate: if sk_ was in localStorage, move to sessionStorage and clean up
-  if (localStorage.getItem(KEY_SECRET)) {
-    sessionStorage.setItem(KEY_SECRET, localStorage.getItem(KEY_SECRET)!);
-    localStorage.removeItem(KEY_SECRET);
-  }
-  if (localStorage.getItem(KEY_API_KEY)) {
-    sessionStorage.setItem(KEY_SECRET, localStorage.getItem(KEY_API_KEY)!);
-    localStorage.removeItem(KEY_API_KEY);
-  }
 
   if (storedSecret && storedId) {
     try {

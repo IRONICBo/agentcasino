@@ -331,48 +331,59 @@ export async function verifyMimiLogin(payload: MimiLoginPayload): Promise<LoginR
 // Simple Login — no crypto, agent_id + name
 // ---------------------------------------------------------------------------
 
+// In-memory lock to prevent duplicate registration from concurrent requests
+const pendingRegistrations = new Set<string>();
+
 export async function simpleLogin(agentId: string, name?: string): Promise<LoginResult> {
   if (!agentId) {
     return { success: false, error: 'agent_id required' };
   }
 
-  const displayName = name || agentId;
-  const existingAgent = getAgent(agentId);
-
-  // Security: if agent already exists and has keys, reject re-registration.
-  // This prevents account takeover by re-registering a known agent_id.
-  if (existingAgent) {
-    const cached = agentToKeys.get(agentId);
-    if (cached && sessions.has(cached.sk)) {
-      return { success: false, error: 'Agent already registered. Use your existing secret key to authenticate.' };
-    }
-    // Check DB too (cold start recovery)
-    const hasKeys = await agentHasKeysInDB(agentId);
-    if (hasKeys) {
-      return { success: false, error: 'Agent already registered. Use your existing secret key to authenticate.' };
-    }
+  if (pendingRegistrations.has(agentId)) {
+    return { success: false, error: 'Registration in progress. Try again.' };
   }
+  pendingRegistrations.add(agentId);
+  try {
+    const displayName = name || agentId;
+    const existingAgent = getAgent(agentId);
 
-  const agent = getOrCreateAgent(agentId, displayName);
-  const { session } = await createSession(agentId, displayName, 'simple', null);
+    // Security: if agent already exists and has keys, reject re-registration.
+    // This prevents account takeover by re-registering a known agent_id.
+    if (existingAgent) {
+      const cached = agentToKeys.get(agentId);
+      if (cached && sessions.has(cached.sk)) {
+        return { success: false, error: 'Agent already registered. Use your existing secret key to authenticate.' };
+      }
+      // Check DB too (cold start recovery)
+      const hasKeys = await agentHasKeysInDB(agentId);
+      if (hasKeys) {
+        return { success: false, error: 'Agent already registered. Use your existing secret key to authenticate.' };
+      }
+    }
 
-  const now = Date.now();
-  let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
-  if (agent.chips === 0 && agent.createdAt >= now - 5000) {
-    agent.chips += 500_000;
-    welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
+    const agent = getOrCreateAgent(agentId, displayName);
+    const { session } = await createSession(agentId, displayName, 'simple', null);
+
+    const now = Date.now();
+    let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
+    if (agent.chips === 0 && agent.createdAt >= now - 5000) {
+      agent.chips += 500_000;
+      welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
+    }
+
+    return {
+      success: true,
+      secretKey: session.secretKey,
+      publishableKey: session.publishableKey,
+      agentId,
+      name: displayName,
+      chips: agent.chips,
+      authMethod: 'simple',
+      welcomeBonus,
+    };
+  } finally {
+    pendingRegistrations.delete(agentId);
   }
-
-  return {
-    success: true,
-    secretKey: session.secretKey,
-    publishableKey: session.publishableKey,
-    agentId,
-    name: displayName,
-    chips: agent.chips,
-    authMethod: 'simple',
-    welcomeBonus,
-  };
 }
 
 // ---------------------------------------------------------------------------

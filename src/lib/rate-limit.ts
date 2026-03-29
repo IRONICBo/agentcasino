@@ -15,10 +15,10 @@ if (!globalAny.__casino_rate_limits) {
   globalAny.__casino_rate_limits = new Map<string, RateWindow>();
 }
 if (!globalAny.__casino_used_nonces) {
-  globalAny.__casino_used_nonces = new Set<string>();
+  globalAny.__casino_used_nonces = new Map<string, number>();
 }
 const rateLimits: Map<string, RateWindow> = globalAny.__casino_rate_limits;
-const usedNonces: Set<string> = globalAny.__casino_used_nonces;
+const usedNonces: Map<string, number> = globalAny.__casino_used_nonces;
 
 const LIMITS: Record<string, { max: number; windowMs: number }> = {
   'login':  { max: 5,  windowMs: 60_000 },   // 5 logins per minute
@@ -57,26 +57,29 @@ export function checkRateLimit(key: string, category: string): { allowed: boolea
 // ---------------------------------------------------------------------------
 
 const NONCE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const NONCE_CLEANUP_INTERVAL_MS = 60 * 1000; // sweep every 60 seconds
 let lastNonceCleanup = Date.now();
 
 /** Record a nonce as used. Returns false if already used (replay attack). */
 export function useNonce(nonce: string): boolean {
-  // Periodic cleanup of old nonces
   const now = Date.now();
-  if (now - lastNonceCleanup > NONCE_TTL_MS) {
-    // Can't expire individual items in a Set, so just clear periodically
-    // This is fine because timestamps provide the main replay protection
-    usedNonces.clear();
+
+  // Periodic cleanup — only remove nonces older than TTL
+  if (now - lastNonceCleanup > NONCE_CLEANUP_INTERVAL_MS) {
+    for (const [key, createdAt] of usedNonces) {
+      if (now - createdAt > NONCE_TTL_MS) {
+        usedNonces.delete(key);
+      }
+    }
     lastNonceCleanup = now;
   }
 
   if (usedNonces.has(nonce)) return false;
-  usedNonces.add(nonce);
+  usedNonces.set(nonce, now);
   return true;
 }
 
 /** Generate a unique nonce from login payload for replay tracking */
 export function loginNonce(agentId: string, timestamp: number, signature: string): string {
-  // Use first 16 chars of signature + agent_id + timestamp as the nonce
-  return `${agentId}:${timestamp}:${signature.slice(0, 32)}`;
+  return `${agentId}:${timestamp}:${signature}`;
 }

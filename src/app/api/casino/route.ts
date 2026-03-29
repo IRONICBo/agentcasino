@@ -126,9 +126,8 @@ export async function GET(req: NextRequest) {
     }
 
     case 'balance': {
-      const id = agentId || paramAgentId;
-      if (!id) return err('Login required or provide agent_id');
-      return NextResponse.json({ agent_id: id, chips: getChipBalance(id) });
+      if (!agentId) return err('Bearer token required. Login first.', 401);
+      return NextResponse.json({ agent_id: agentId, chips: getChipBalance(agentId) });
     }
 
     case 'resolve_watch': {
@@ -144,9 +143,8 @@ export async function GET(req: NextRequest) {
     }
 
     case 'status': {
-      const id = agentId || paramAgentId;
-      if (!id) return err('Login required or provide agent_id');
-      const agent = getAgent(id);
+      if (!agentId) return err('Bearer token required. Login first.', 401);
+      const agent = getAgent(agentId);
       if (!agent) return err('Agent not found. Login or register first.', 404);
       return NextResponse.json({
         id: agent.id,
@@ -178,12 +176,11 @@ export async function GET(req: NextRequest) {
     }
 
     case 'history': {
-      const id = agentId || paramAgentId;
-      if (!id) return err('Login required or provide agent_id');
+      if (!agentId) return err('Bearer token required. Login first.', 401);
       const { getAgentHistory } = await import('@/lib/casino-db');
-      const limit = parseInt(req.nextUrl.searchParams.get('limit') ?? '20');
-      const history = await getAgentHistory(id, limit);
-      return NextResponse.json({ agent_id: id, history });
+      const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '20'), 100);
+      const history = await getAgentHistory(agentId, limit);
+      return NextResponse.json({ agent_id: agentId, history });
     }
 
     case 'game_state': {
@@ -244,7 +241,7 @@ export async function GET(req: NextRequest) {
     case 'chat_history': {
       const rid = req.nextUrl.searchParams.get('room_id');
       if (!rid) return err('room_id required');
-      const limit = parseInt(req.nextUrl.searchParams.get('limit') ?? '50');
+      const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '50'), 100);
       return NextResponse.json({ messages: getChatMessages(rid, limit) });
     }
 
@@ -285,7 +282,7 @@ export async function GET(req: NextRequest) {
     case 'hands': {
       const roomId = req.nextUrl.searchParams.get('room_id');
       const aid = agentId || paramAgentId;
-      const limit = parseInt(req.nextUrl.searchParams.get('limit') || '20');
+      const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '20'), 100);
       if (roomId) {
         return NextResponse.json({ hands: getHandsByRoom(roomId, limit) });
       }
@@ -336,7 +333,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Rate limiting (use agent_id or IP as key)
-  const rateLimitKey = resolvedAgentId || body.agent_id || req.headers.get('x-forwarded-for') || 'anonymous';
+  const clientIp = req.headers.get('x-real-ip') || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous';
+  const rateLimitKey = resolvedAgentId || clientIp;
   const category = action === 'login' || action === 'register' ? 'login'
     : action === 'claim' ? 'claim'
     : action === 'play' ? 'action'
@@ -426,7 +424,7 @@ export async function POST(req: NextRequest) {
       const id = resolvedAgentId;
       if (!id) return err('Login required or provide agent_id');
       if (!body.room_id) return err('room_id required');
-      if (!body.buy_in || typeof body.buy_in !== 'number') return err('buy_in required (number)');
+      if (!body.buy_in || typeof body.buy_in !== 'number' || !Number.isFinite(body.buy_in) || body.buy_in <= 0) return err('buy_in required (positive finite number)');
 
       const agent = getOrCreateAgent(id, body.name || id);
       const error = joinRoom(body.room_id, id, agent.name, body.buy_in);
@@ -526,7 +524,8 @@ export async function POST(req: NextRequest) {
       if (!body.message) return err('message required');
       // SECURITY: strip any secret keys from chat messages
       const rawMsg = String(body.message);
-      if (/sk_[a-f0-9]{10,}/i.test(rawMsg)) {
+      if (rawMsg.length > 500) return err('Message too long (max 500 chars)');
+      if (/sk_[a-f0-9]{10,}/.test(rawMsg)) {
         return err('Message rejected: never share secret keys (sk_) in chat');
       }
       const agent = getAgent(id);

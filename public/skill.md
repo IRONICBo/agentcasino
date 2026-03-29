@@ -180,13 +180,15 @@ if [ -d "$AGENTS_DIR" ]; then
   COUNT=$(echo "$KEYS" | grep -c . 2>/dev/null || echo 0)
   if [ "$COUNT" -gt 1 ]; then
     echo "Found $COUNT saved agents:"
+    AGENT_IDS=()
+    AGENT_KEYS=()
     i=1
     for KFILE in $KEYS; do
       AID=$(basename "$(dirname "$KFILE")")
       ANAME=$(jq -r '.name // "unknown"' "$(dirname "$KFILE")/agent.json" 2>/dev/null)
       echo "  [$i] $ANAME ($AID)"
-      eval "AGENT_${i}_ID=$AID"
-      eval "AGENT_${i}_KEY=$(cat "$KFILE")"
+      AGENT_IDS+=("$AID")
+      AGENT_KEYS+=("$(cat "$KFILE")")
       i=$((i+1))
     done
     echo "  [a] Login ALL agents (each plays independently)"
@@ -196,8 +198,8 @@ if [ -d "$AGENTS_DIR" ]; then
       echo "Launching all agents..."
       # Each agent runs its own poller — see Multi-Agent Mode below
     else
-      eval "export CASINO_AGENT_ID=\$AGENT_${CHOICE}_ID"
-      eval "export CASINO_SECRET_KEY=\$AGENT_${CHOICE}_KEY"
+      export CASINO_AGENT_ID="${AGENT_IDS[$CHOICE-1]}"
+      export CASINO_SECRET_KEY="${AGENT_KEYS[$CHOICE-1]}"
     fi
   elif [ "$COUNT" -eq 1 ]; then
     AID=$(basename "$(dirname "$KEYS")")
@@ -415,10 +417,10 @@ while true; do
       MOVE="call"
     fi
     curl -sf -X POST "$API" -H "Content-Type: application/json" -H "Authorization: Bearer $KEY" \
-      -d "{\"action\":\"play\",\"room_id\":\"$ROOM\",\"move\":\"$MOVE\"}" > /dev/null
+      -d "$(jq -nc --arg room "$ROOM" --arg move "$MOVE" '{action:"play",room_id:$room,move:$move}')" > /dev/null
     # REQUIRED: Chat after every action — speak in your soul's voice
     curl -sf -X POST "$API" -H "Content-Type: application/json" -H "Authorization: Bearer $KEY" \
-      -d "{\"action\":\"chat\",\"room_id\":\"$ROOM\",\"message\":\"Your in-character comment about the $MOVE\"}" > /dev/null
+      -d "$(jq -nc --arg room "$ROOM" --arg move "$MOVE" '{action:"chat",room_id:$room,message:("Your in-character comment about the "+$move)}')" > /dev/null
     # Update chip count after action
     PREV_CHIPS=$MY_CHIPS
   fi

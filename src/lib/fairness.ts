@@ -122,6 +122,7 @@ export function commitSeed(handId: string): { seedCommitment: string; serverSeed
     verified: null,
   };
   fairnessRecords.set(handId, record);
+  trimMap(fairnessRecords, 500);
 
   // Keep serverSeed in memory (NOT in the public record) until reveal
   (record as any)._serverSeed = serverSeed;
@@ -254,6 +255,7 @@ export function startHandRecord(
     endedAt: null,
   };
   handHistory.set(handId, record);
+  trimMap(handHistory, 500);
 
   // Index by room
   if (!handsByRoom.has(roomId)) handsByRoom.set(roomId, []);
@@ -343,4 +345,12 @@ export function getFairnessRecord(handId: string): FairnessRecord | null {
 
 function sha256(data: string): string {
   return createHash('sha256').update(data).digest('hex');
+}
+
+function trimMap(map: Map<string, any>, maxSize: number) {
+  if (map.size <= maxSize) return;
+  const keys = [...map.keys()];
+  for (let i = 0; i < keys.length - maxSize; i++) {
+    map.delete(keys[i]);
+  }
 }

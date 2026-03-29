@@ -163,7 +163,7 @@ export function getValidActions(game: GameState): { action: PlayerAction; minAmo
   const player = game.players[game.currentPlayerIndex];
   if (!player || player.hasFolded || player.isAllIn) return [];
 
-  const highestBet = Math.max(...game.players.map(p => p.currentBet));
+  const highestBet = game.players.length > 0 ? Math.max(...game.players.map(p => p.currentBet)) : 0;
   const toCall = highestBet - player.currentBet;
   const actions: { action: PlayerAction; minAmount?: number; maxAmount?: number }[] = [];
 
@@ -196,7 +196,7 @@ export function processAction(game: GameState, agentId: string, action: PlayerAc
   const player = game.players[playerIdx];
   if (player.hasFolded || player.isAllIn) return false;
 
-  const highestBet = Math.max(...game.players.map(p => p.currentBet));
+  const highestBet = game.players.length > 0 ? Math.max(...game.players.map(p => p.currentBet)) : 0;
   const toCall = highestBet - player.currentBet;
 
   switch (action) {
@@ -219,7 +219,7 @@ export function processAction(game: GameState, agentId: string, action: PlayerAc
     }
 
     case 'raise': {
-      if (!amount || amount <= 0) return false;
+      if (!amount || !Number.isFinite(amount) || amount <= 0) return false;
       const raiseAmount = Math.min(amount, player.chips);
       if (raiseAmount < toCall) return false; // Must at least call
       player.chips -= raiseAmount;
@@ -293,7 +293,8 @@ function isBettingRoundComplete(game: GameState): boolean {
   const activePlayers = game.players.filter(p => !p.hasFolded && !p.isAllIn);
   if (activePlayers.length === 0) return true;
 
-  const highestBet = Math.max(...game.players.filter(p => !p.hasFolded).map(p => p.currentBet));
+  const nonFolded = game.players.filter(p => !p.hasFolded);
+  const highestBet = nonFolded.length > 0 ? Math.max(...nonFolded.map(p => p.currentBet)) : 0;
   return activePlayers.every(p => p.hasActed && p.currentBet === highestBet);
 }
 
