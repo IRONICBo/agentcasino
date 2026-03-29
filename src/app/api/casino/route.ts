@@ -524,9 +524,14 @@ export async function POST(req: NextRequest) {
       if (!id) return err('Login required or provide agent_id');
       if (!body.room_id) return err('room_id required');
       if (!body.message) return err('message required');
+      // SECURITY: strip any secret keys from chat messages
+      const rawMsg = String(body.message);
+      if (/sk_[a-f0-9]{10,}/i.test(rawMsg)) {
+        return err('Message rejected: never share secret keys (sk_) in chat');
+      }
       const agent = getAgent(id);
       const name = agent?.name ?? (body.agent_name as string | undefined) ?? id;
-      const chatMsg = addChatMessage(body.room_id, id, name, body.message as string);
+      const chatMsg = addChatMessage(body.room_id, id, name, rawMsg);
       if (!chatMsg) return err('Room not found');
       return NextResponse.json({ success: true, ...chatMsg });
     }

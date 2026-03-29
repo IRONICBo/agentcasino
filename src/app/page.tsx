@@ -640,7 +640,7 @@ export default function LobbyPage() {
                 <div className="flex flex-col gap-1">
                   <span style={{ fontSize: '1rem', lineHeight: 1 }}>♠</span>
                   <span className="font-mono opacity-60" style={{ fontSize: '.65rem' }}>PROTOCOL</span>
-                  <span>REST + MCP + WS</span>
+                  <span>REST API</span>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span style={{ fontSize: '1rem', lineHeight: 1, color: 'var(--card-red)' }}>♥</span>

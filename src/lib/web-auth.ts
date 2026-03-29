@@ -44,10 +44,11 @@ export function authHeaders(secretKey: string): HeadersInit {
  * Returns identity or null on error.
  */
 export async function resolveIdentity(): Promise<WebIdentity> {
-  // 1. Check ?auth= URL param — agent-generated link (backward compat)
+  // 1. Check ?auth= URL param — only accept pk_ (publishable keys safe for URLs)
+  //    SECURITY: sk_ keys MUST NOT appear in URLs (browser history, server logs, Referer leaks)
   const urlParams = new URLSearchParams(window.location.search);
   const urlKey = urlParams.get('auth');
-  if (urlKey && urlKey.startsWith('sk_')) {
+  if (urlKey && urlKey.startsWith('pk_')) {
     const identity = await validateAndAdoptKey(urlKey);
     if (identity) {
       urlParams.delete('auth');
@@ -56,12 +57,28 @@ export async function resolveIdentity(): Promise<WebIdentity> {
       return identity;
     }
   }
+  // Strip sk_ from URL if someone mistakenly put it there
+  if (urlKey && urlKey.startsWith('sk_')) {
+    urlParams.delete('auth');
+    const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+    window.history.replaceState({}, '', newUrl);
+    console.warn('[security] sk_ key removed from URL — never put secret keys in URLs');
+  }
 
-  // 2. Restore from localStorage (try new keys first, then legacy)
-  const storedSecret  = localStorage.getItem(KEY_SECRET) || localStorage.getItem(KEY_API_KEY);
+  // 2. Restore from sessionStorage (sk_) + localStorage (id/name/pk_)
+  const storedSecret  = sessionStorage.getItem(KEY_SECRET) || localStorage.getItem(KEY_SECRET) || localStorage.getItem(KEY_API_KEY);
   const storedId      = localStorage.getItem(KEY_AGENT_ID);
   const storedName    = localStorage.getItem(KEY_NAME);
   const storedPublish = localStorage.getItem(KEY_PUBLISH);
+  // Migrate: if sk_ was in localStorage, move to sessionStorage and clean up
+  if (localStorage.getItem(KEY_SECRET)) {
+    sessionStorage.setItem(KEY_SECRET, localStorage.getItem(KEY_SECRET)!);
+    localStorage.removeItem(KEY_SECRET);
+  }
+  if (localStorage.getItem(KEY_API_KEY)) {
+    sessionStorage.setItem(KEY_SECRET, localStorage.getItem(KEY_API_KEY)!);
+    localStorage.removeItem(KEY_API_KEY);
+  }
 
   if (storedSecret && storedId) {
     try {
@@ -132,12 +149,14 @@ async function register(agentId: string, name: string): Promise<WebIdentity> {
 function persist(identity: WebIdentity) {
   localStorage.setItem(KEY_AGENT_ID,  identity.agentId);
   localStorage.setItem(KEY_NAME,      identity.agentName);
-  localStorage.setItem(KEY_SECRET,    identity.secretKey);
   if (identity.publishableKey) {
     localStorage.setItem(KEY_PUBLISH, identity.publishableKey);
   }
-  // Clean up legacy key
+  // SECURITY: sk_ stored in sessionStorage only (cleared on tab close, not persisted)
+  sessionStorage.setItem(KEY_SECRET, identity.secretKey);
+  // Clean up legacy keys from localStorage
   localStorage.removeItem(KEY_API_KEY);
+  localStorage.removeItem(KEY_SECRET);
 }
 
 /** Save updated name (after rename) */
