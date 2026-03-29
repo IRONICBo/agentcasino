@@ -96,6 +96,9 @@ export default function LobbyPage() {
   const [liveGame, setLiveGame] = useState<ClientGameState | null>(null);
   const [liveRoomId, setLiveRoomId] = useState('');
   const [liveRoomName, setLiveRoomName] = useState('');
+  const [agentStats, setAgentStats] = useState<any>(null);
+  const [agentRank, setAgentRank] = useState<number | null>(null);
+  const [topChips, setTopChips] = useState(0);
   const router = useRouter();
 
   const fetchCategories = useCallback(() => {
@@ -113,6 +116,18 @@ export default function LobbyPage() {
     fetch(`/api/casino?action=history&agent_id=${agentId}&limit=5`, {
       headers: { 'Authorization': `Bearer ${secretKey}` },
     }).then(r => r.json()).then(d => { if (Array.isArray(d.history)) setHistory(d.history); }).catch(() => {});
+
+    fetch(`/api/casino?action=stats&agent_id=${agentId}`)
+      .then(r => r.json()).then(d => { if (d.hands_played != null) setAgentStats(d); }).catch(() => {});
+
+    fetch('/api/casino?action=leaderboard')
+      .then(r => r.json()).then(d => {
+        if (Array.isArray(d.leaderboard)) {
+          const me = d.leaderboard.findIndex((a: any) => a.agent_id === agentId);
+          setAgentRank(me >= 0 ? me + 1 : null);
+          if (d.leaderboard.length > 0) setTopChips(d.leaderboard[0].chips);
+        }
+      }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -352,6 +367,107 @@ export default function LobbyPage() {
                 </button>
               </div>
             </div>
+
+            {/* ── Agent Profile Card ── */}
+            {identity && (
+              <div className="mt-6 pt-6 border-t border-[var(--border)]">
+                {/* Row 1: Identity + Rank */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 border-2 border-[var(--ink)] flex items-center justify-center font-mono text-xs font-bold" style={{ boxShadow: '2px 2px 0 var(--ink)' }}>
+                      {agentName ? agentName[0].toUpperCase() : '?'}
+                    </div>
+                    <span className="font-serif italic text-sm font-medium">{agentName}</span>
+                  </div>
+                  {agentRank && (
+                    <span className="font-mono text-lg font-bold" style={{ color: 'var(--ink)' }}>#{agentRank}</span>
+                  )}
+                  {!agentRank && (
+                    <span className="font-mono text-xs" style={{ color: 'var(--ink-light)' }}>Unranked</span>
+                  )}
+                </div>
+
+                {/* Row 2: Chips bar */}
+                <div className="mb-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[9px] tracking-wider uppercase" style={{ color: 'var(--ink-light)' }}>Chips</span>
+                    <span className="font-mono text-xs font-medium">{chips.toLocaleString()}</span>
+                  </div>
+                  <div className="h-2 border border-[var(--border)] bg-[var(--bg-page)]">
+                    <div
+                      className="h-full bg-[var(--ink)]"
+                      style={{ width: `${topChips > 0 ? Math.min(100, (chips / topChips) * 100) : 0}%`, transition: 'width 0.5s' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Row 3: Career stats */}
+                <div className="flex gap-4 mb-3 pb-3 border-b border-[var(--border)]">
+                  <div className="text-center flex-1">
+                    <div className="font-mono text-sm font-bold">{history.length > 0 ? history.length : '0'}</div>
+                    <div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-light)' }}>Games</div>
+                  </div>
+                  <div className="text-center flex-1">
+                    <div className="font-mono text-sm font-bold">{winRate != null ? `${winRate}%` : '—'}</div>
+                    <div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-light)' }}>Win Rate</div>
+                  </div>
+                  <div className="text-center flex-1">
+                    <div className={`font-mono text-sm font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {totalProfit >= 0 ? '+' : ''}{totalProfit >= 1000 || totalProfit <= -1000 ? `${(totalProfit/1000).toFixed(0)}K` : totalProfit}
+                    </div>
+                    <div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-light)' }}>P&L</div>
+                  </div>
+                </div>
+
+                {/* Row 4: Poker style metrics */}
+                {agentStats && agentStats.hands_played > 0 ? (
+                  <div className="mb-3 pb-3 border-b border-[var(--border)]">
+                    <div className="flex gap-3 mb-2">
+                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-light)' }}>VPIP</span> <span className="font-bold">{agentStats.vpip_pct}%</span></div>
+                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-light)' }}>PFR</span> <span className="font-bold">{agentStats.pfr_pct}%</span></div>
+                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-light)' }}>AF</span> <span className="font-bold">{agentStats.af}</span></div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px]" style={{ color: 'var(--ink-light)' }}>Style:</span>
+                      <span className="font-mono text-[10px] font-bold border border-[var(--ink)] px-1.5 py-0.5" style={{ boxShadow: '1px 1px 0 var(--ink)' }}>
+                        {agentStats.style || 'Unknown'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-3 pb-3 border-b border-[var(--border)]">
+                    <p className="font-mono text-[10px]" style={{ color: 'var(--ink-light)' }}>Play a few hands to see your poker stats</p>
+                  </div>
+                )}
+
+                {/* Row 5: Streak + Recent results */}
+                <div className="flex items-center justify-between">
+                  {agentStats?.current_streak != null && agentStats.current_streak !== 0 ? (
+                    <span className="font-mono text-[10px] font-bold">
+                      {agentStats.current_streak > 0 ? '🔥' : '❄️'} {Math.abs(agentStats.current_streak)} {agentStats.current_streak > 0 ? 'win' : 'loss'} streak
+                    </span>
+                  ) : (
+                    <span className="font-mono text-[10px]" style={{ color: 'var(--ink-light)' }}>No streak</span>
+                  )}
+                  <div className="flex items-center gap-1">
+                    {history.slice(0, 5).map((h, i) => (
+                      <div
+                        key={i}
+                        className="w-3 h-3"
+                        style={{
+                          background: h.is_winner ? '#10b981' : '#ef4444',
+                          border: '1px solid var(--ink)',
+                        }}
+                        title={`${h.room_name}: ${h.is_winner ? 'W' : 'L'} ${h.profit >= 0 ? '+' : ''}${h.profit.toLocaleString()}`}
+                      />
+                    ))}
+                    {history.length === 0 && (
+                      <span className="font-mono text-[9px]" style={{ color: 'var(--ink-light)' }}>No games yet</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right: Tables Panel */}
