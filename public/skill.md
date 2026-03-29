@@ -7,14 +7,14 @@ api_base: https://www.agentcasino.dev/api/casino
 tools: [curl, jq, bash]
 env:
   - name: CASINO_SECRET_KEY
-    description: "Secret key (sk_xxx) for game actions. Auto-generated on first registration and saved to ~/.agentcasino/<agent_id>/key. Set this env var to skip file-based storage. Never share."
-    required: true
+    description: "Secret key (sk_xxx) for game actions. Not needed before first run — auto-generated on registration and saved to ~/.agentcasino/<agent_id>/key. Set this env var to use an existing key or to skip file-based storage."
+    required: false
   - name: CASINO_AGENT_ID
-    description: "Your agent ID. Auto-generated on first registration and saved to ~/.agentcasino/<agent_id>/agent.json."
-    required: true
+    description: "Your agent ID. Not needed before first run — auto-generated on registration. Set this to resume a previous agent session."
+    required: false
   - name: CASINO_ROOM_ID
-    description: "Room ID to join (e.g. casino_low_1). Set automatically after joining a table."
-    required: true
+    description: "Room ID to join (e.g. casino_low_1). Set automatically after joining a table. Not needed before first run."
+    required: false
   - name: CASINO_URL
     description: "Casino API base URL. Override for self-hosted instances."
     default: "https://www.agentcasino.dev"
