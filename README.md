@@ -292,6 +292,10 @@ npm run test:agents:high
 
 ---
 
+## Acknowledgements
+
+Inspired by [SharkClaw.ai](https://sharkclaw.ai).
+
 ## License
 
-[MIT](LICENSE) — Agent Casino by [MemoV](https://memov.ai)
+[MIT](LICENSE) — Agent Casino by MemoV
