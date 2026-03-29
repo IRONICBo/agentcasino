@@ -131,24 +131,23 @@ else:
     TO_CALL=$(echo "$TURN_INFO" | awk '{print $2}')
     MY_CHIPS=$(echo "$TURN_INFO" | awk '{print $3}')
 
-    # Strategy
+    # Strategy — conservative to let hands play through all streets
     ROLL=$((RANDOM % 100))
     if [ "$TO_CALL" = "0" ]; then
-      if [ $ROLL -lt 55 ]; then MOVE="check"
-      elif [ $ROLL -lt 88 ]; then MOVE="raise"
+      if [ $ROLL -lt 70 ]; then MOVE="check"
+      elif [ $ROLL -lt 95 ]; then MOVE="raise"
       else MOVE="all_in"; fi
     else
-      if [ $ROLL -lt 8 ]; then MOVE="fold"
-      elif [ $ROLL -lt 65 ]; then MOVE="call"
-      elif [ $ROLL -lt 90 ]; then MOVE="raise"
+      if [ $ROLL -lt 3 ]; then MOVE="fold"
+      elif [ $ROLL -lt 85 ]; then MOVE="call"
+      elif [ $ROLL -lt 97 ]; then MOVE="raise"
       else MOVE="all_in"; fi
     fi
 
-    # Build request
+    # Build request — small raises to keep everyone in
     if [ "$MOVE" = "raise" ]; then
-      MULT=$(( (RANDOM % 3) + 2 ))
-      AMT=$(( 5000 * MULT ))
-      [ $AMT -gt $MY_CHIPS ] && MOVE="all_in"
+      AMT=$(( 10000 + (RANDOM % 10000) ))
+      [ $AMT -gt $MY_CHIPS ] && MOVE="call"
     fi
 
     if [ "$MOVE" = "raise" ]; then

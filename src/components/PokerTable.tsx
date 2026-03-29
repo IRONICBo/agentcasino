@@ -6,17 +6,18 @@ import { PlayingCard } from './PlayingCard';
 import { useState, useRef, useEffect } from 'react';
 
 // Seat positions for up to 9 players around an oval
-const SEAT_COORDS: [number, number][] = [
-  [88, 42],  // 0: bottom-center (hero)
-  [72, 8],   // 1: bottom-left
-  [35, 2],   // 2: mid-left
-  [5, 14],   // 3: top-left
-  [0, 42],   // 4: top-center
-  [5, 70],   // 5: top-right
-  [35, 82],  // 6: mid-right
-  [72, 77],  // 7: bottom-right
-  [88, 60],  // 8: bottom-center-right
-];
+/** Calculate evenly-spaced seat positions around the bottom half (top reserved for dealer) */
+function seatCoords(totalPlayers: number): [number, number][] {
+  const coords: [number, number][] = [];
+  for (let i = 0; i < totalPlayers; i++) {
+    // Arc from left to right across the bottom half (PI = 180°)
+    const angle = Math.PI * (i / (totalPlayers - 1 || 1));
+    const left = 50 - 42 * Math.cos(angle);
+    const top = 42 + 48 * Math.sin(angle);
+    coords.push([top, left]);
+  }
+  return coords;
+}
 
 const phaseLabels: Record<string, string> = {
   waiting: 'WAITING', preflop: 'PRE-FLOP', flop: 'FLOP',
@@ -89,6 +90,24 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
 
   return (
     <div style={{ position: 'relative', width: '100%', maxWidth: 900, margin: '0 auto', aspectRatio: '16 / 10' }}>
+
+      {/* ── Dealer avatar ── */}
+      <div style={{
+        position: 'absolute',
+        top: '-12%', left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 20,
+        pointerEvents: 'none',
+      }}>
+        <img
+          src="/dealer.png"
+          alt="Dealer"
+          style={{
+            width: 240,
+            filter: 'drop-shadow(0 0 24px rgba(212,175,55,0.5)) drop-shadow(0 6px 16px rgba(0,0,0,0.6))',
+          }}
+        />
+      </div>
 
       {/* ── Wood rail (outer oval) ── */}
       <div
@@ -223,7 +242,8 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
 
       {/* ── Player seats ── */}
       {gameState.players.map((player, idx) => {
-        const [top, left] = SEAT_COORDS[player.seatIndex] ?? SEAT_COORDS[0];
+        const seats = seatCoords(gameState.players.length);
+        const [top, left] = seats[idx] ?? seats[0];
         return (
           <div
             key={player.agentId}

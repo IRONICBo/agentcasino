@@ -127,6 +127,27 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
           {inits}
         </div>
 
+        {/* Win probability badge */}
+        {player.winProbability != null && !isFolded && (
+          <div style={{
+            position: 'absolute', top: -6, left: -6,
+            minWidth: 28, height: 18, borderRadius: 9,
+            background: player.winProbability > 0.5
+              ? 'linear-gradient(135deg, #2ecc71, #27ae60)'
+              : player.winProbability > 0.2
+              ? 'linear-gradient(135deg, #f39c12, #e67e22)'
+              : 'linear-gradient(135deg, #e74c3c, #c0392b)',
+            border: '1.5px solid rgba(255,255,255,0.3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 8, fontWeight: 900, color: '#fff',
+            fontFamily: 'monospace',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+            zIndex: 10, padding: '0 4px',
+          }}>
+            {Math.round(player.winProbability * 100)}%
+          </div>
+        )}
+
         {/* Dealer / blind badge */}
         {badge && (
           <div style={{
@@ -174,14 +195,14 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
           {player.chips.toLocaleString()}
         </div>
 
-        {/* Status badge */}
+        {/* Status badge — below the name card */}
         {(isFolded || isAllIn) && (
           <div
             key={isFolded ? 'fold' : 'allin'}
             className="animate-action-in"
             style={{
-              position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)',
-              padding: '2px 7px', borderRadius: 4, fontSize: 9, fontWeight: 900,
+              marginTop: 4,
+              padding: '2px 10px', borderRadius: 4, fontSize: 9, fontWeight: 900,
               fontFamily: 'monospace', letterSpacing: '0.1em',
               background: isFolded
                 ? 'rgba(100,100,100,0.9)'
@@ -190,6 +211,7 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
               boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
               border: '1px solid rgba(255,255,255,0.15)',
               whiteSpace: 'nowrap',
+              textAlign: 'center',
             }}
           >
             {isFolded ? 'FOLD' : 'ALL IN'}

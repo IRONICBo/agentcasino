@@ -6,7 +6,6 @@ import { ClientGameState, ChatMessage, PlayerAction } from '@/lib/types';
 import { PokerTable } from '@/components/PokerTable';
 import { EmptyTable } from '@/components/EmptyTable';
 import { ChatBox } from '@/components/ChatBox';
-import { AgentPanel } from '@/components/AgentPanel';
 import { resolveIdentity, authHeaders } from '@/lib/web-auth';
 
 function RoomPageInner() {
@@ -377,16 +376,9 @@ function RoomPageInner() {
               onAction={spectating ? () => {} : handleAction}
             />
           </div>
-          {/* Right column: spectating shows agent panel + chat stacked; playing shows chat only */}
-          <div className="flex flex-col gap-4 h-[600px] lg:h-[calc(100vh-6rem)]">
-            {spectating && agentId && (
-              <div className="h-[280px] shrink-0">
-                <AgentPanel agentId={agentId} agentName={agentName} secretKey={secretKey} chips={chips} />
-              </div>
-            )}
-            <div className="flex-1 min-h-0">
-              <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
-            </div>
+          {/* Right column: Live Chat only */}
+          <div className="h-[600px] lg:h-[calc(100vh-6rem)]">
+            <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
           </div>
         </div>
       </main>

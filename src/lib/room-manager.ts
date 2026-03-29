@@ -2,6 +2,7 @@ import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
 import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers } from './casino-db';
+import { calculateEquity } from './equity';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
 
@@ -635,17 +636,27 @@ export function getClientGameState(roomId: string, viewerAgentId: string): Clien
   const game = room.game;
   const isShowdown = game.phase === 'showdown';
 
+  // Calculate win probabilities (skip during waiting/showdown)
+  const showEquity = game.phase !== 'waiting' && game.phase !== 'showdown' && game.players.some(p => p.holeCards.length === 2);
+  const equity = showEquity
+    ? calculateEquity(
+        game.players.map(p => ({ agentId: p.agentId, holeCards: p.holeCards, hasFolded: p.hasFolded })),
+        game.communityCards,
+      )
+    : null;
+
   const players: ClientPlayer[] = game.players.map(p => ({
     agentId: p.agentId,
     name: p.name,
     seatIndex: p.seatIndex,
     chips: p.chips,
-    holeCards: (p.agentId === viewerAgentId || isShowdown) ? p.holeCards : null,
+    holeCards: p.holeCards,  // All cards face-up — spectators see everything
     currentBet: p.currentBet,
     hasFolded: p.hasFolded,
     hasActed: p.hasActed,
     isAllIn: p.isAllIn,
     isConnected: p.isConnected,
+    winProbability: equity?.get(p.agentId) ?? null,
   }));
 
   const now = Date.now();

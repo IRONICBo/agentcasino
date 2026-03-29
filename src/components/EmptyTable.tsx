@@ -10,14 +10,13 @@ interface EmptyTableProps {
   label?: string;
 }
 
-/** Seat positions around an ellipse (percentage-based, top/left) */
+/** Seat positions — bottom half + sides only (top reserved for dealer) */
 function seatPositions(count: number): [number, number][] {
   const positions: [number, number][] = [];
   for (let i = 0; i < count; i++) {
-    // Distribute evenly around an ellipse, starting from bottom-center
-    const angle = (Math.PI * 2 * i) / count - Math.PI / 2;
-    const x = 50 + 42 * Math.cos(angle);
-    const y = 50 + 40 * Math.sin(angle);
+    const angle = Math.PI * (i / (count - 1));
+    const x = 50 - 42 * Math.cos(angle);
+    const y = 50 + 38 * Math.sin(angle);
     positions.push([y, x]);
   }
   return positions;

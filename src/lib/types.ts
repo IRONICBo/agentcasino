@@ -137,6 +137,7 @@ export interface ClientPlayer {
   hasActed: boolean;
   isAllIn: boolean;
   isConnected: boolean;
+  winProbability: number | null; // 0-1, null if not in active hand
 }
 
 export interface ChatMessage {
