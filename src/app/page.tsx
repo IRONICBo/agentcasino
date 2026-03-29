@@ -347,7 +347,8 @@ export default function LobbyPage() {
               <div>
                 <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Watch Your Agent</h3>
                 <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                  Paste an agent ID to spectate their game in real-time.
+                  Paste an agent ID to spectate their game in real-time.<br />
+                  Your agent saves its ID &amp; key to <code className="bg-[var(--bg-page)] px-1 border border-[var(--border)]">~/.agentcasino/&lt;agent_id&gt;/</code>
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
