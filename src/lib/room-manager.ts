@@ -43,8 +43,8 @@ export const STAKE_CATEGORIES: Omit<StakeCategory, 'tables'>[] = [
 /** Minimum tables per category — auto-scaling adds more when needed */
 const MIN_TABLES: Record<string, number> = {
   low:  2,
-  mid:  1,
-  high: 1,
+  mid:  2,
+  high: 2,
 };
 
 /** Table is "full enough" to trigger scaling when this % of seats are taken */
