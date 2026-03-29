@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { StakeCategory, Card } from '@/lib/types';
+import { StakeCategory, Card, ClientGameState } from '@/lib/types';
 import { PlayingCard } from '@/components/PlayingCard';
+import { EmptyTable } from '@/components/EmptyTable';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { resolveIdentity, buildWatchLink, resolveWatch, persistName, authHeaders, WebIdentity } from '@/lib/web-auth';
@@ -92,6 +93,9 @@ export default function LobbyPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [watchApiKey, setWatchApiKey] = useState('');
+  const [liveGame, setLiveGame] = useState<ClientGameState | null>(null);
+  const [liveRoomId, setLiveRoomId] = useState('');
+  const [liveRoomName, setLiveRoomName] = useState('');
   const router = useRouter();
 
   const fetchCategories = useCallback(() => {
@@ -152,6 +156,27 @@ export default function LobbyPage() {
     });
     fetchCategories();
   }, [fetchCategories, loadBalance]);
+
+  // Live game preview — poll the hottest room's game state
+  useEffect(() => {
+    // Find the room with most players
+    const allTables = categories.flatMap(cat => cat.tables);
+    const hottest = allTables.filter(t => t.playerCount > 0).sort((a, b) => b.playerCount - a.playerCount)[0];
+    if (!hottest) { setLiveGame(null); return; }
+    setLiveRoomId(hottest.id);
+    setLiveRoomName(hottest.name);
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/casino?action=game_state&room_id=${hottest.id}&agent_id=__spectator__`);
+        const data = await res.json();
+        if (data.phase) setLiveGame(data);
+      } catch {}
+    };
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => clearInterval(interval);
+  }, [categories]);
 
   const handleNameConfirm = useCallback((name: string) => {
     localStorage.setItem('agent_name', name);
@@ -331,6 +356,62 @@ export default function LobbyPage() {
 
           {/* Right: Tables Panel */}
           <div className="bg-[var(--bg-page)] p-10 lg:p-16 flex flex-col overflow-y-auto max-h-[90vh] lg:max-h-none">
+
+            {/* Live Game Preview or Empty Table */}
+            <div className="mb-6">
+              {liveGame && liveGame.phase !== 'waiting' ? (
+                <a href={`/room/${liveRoomId}?spectate=1`} className="block border border-[var(--border)] bg-white p-4 transition-shadow hover:shadow-[2px_2px_0_var(--ink)]" style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="status-dot" />
+                      <span className="font-mono text-[10px] tracking-widest uppercase" style={{ color: 'var(--ink-light)' }}>Live Now</span>
+                    </div>
+                    <span className="font-mono text-[10px]" style={{ color: 'var(--ink-light)' }}>{liveRoomName}</span>
+                  </div>
+                  {/* Community cards */}
+                  <div className="flex items-center justify-center gap-1.5 mb-3" style={{ minHeight: 48 }}>
+                    {liveGame.communityCards.length > 0 ? (
+                      liveGame.communityCards.map((card, i) => (
+                        <PlayingCard key={i} card={card} dealDelay={0} />
+                      ))
+                    ) : (
+                      <span className="font-mono text-xs" style={{ color: 'var(--ink-muted)' }}>Pre-flop</span>
+                    )}
+                  </div>
+                  {/* Pot + phase */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-xs font-medium">Pot: {liveGame.pot.toLocaleString()}</span>
+                    <span className="font-mono text-[10px] uppercase" style={{ color: 'var(--ink-light)' }}>{liveGame.phase}</span>
+                  </div>
+                  {/* Players */}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {liveGame.players.map((p, i) => (
+                      <div key={p.agentId} className="flex items-center gap-1">
+                        <div
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ background: p.hasFolded ? '#ccc' : i === liveGame!.currentPlayerIndex ? '#10b981' : 'var(--ink)' }}
+                        />
+                        <span className={`font-mono text-[10px] ${p.hasFolded ? 'line-through' : ''}`} style={{ color: p.hasFolded ? 'var(--ink-muted)' : 'var(--ink)' }}>
+                          {p.name}
+                        </span>
+                        <span className="font-mono text-[9px]" style={{ color: 'var(--ink-light)' }}>
+                          {p.chips.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </a>
+              ) : (
+                <div className="border border-[var(--border)] bg-white p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ink-muted)' }} />
+                    <span className="font-mono text-[10px] tracking-widest uppercase" style={{ color: 'var(--ink-light)' }}>No Active Games</span>
+                  </div>
+                  <EmptyTable maxSeats={6} label="Waiting for agents..." />
+                </div>
+              )}
+            </div>
+
             <div className="flex items-baseline justify-between mb-4">
               <span className="font-mono text-xs tracking-[0.12em] uppercase" style={{ color: 'var(--ink-light)', fontSize: '.72rem' }}>
                 Live Tables

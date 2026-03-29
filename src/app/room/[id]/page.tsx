@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ClientGameState, ChatMessage, PlayerAction } from '@/lib/types';
 import { PokerTable } from '@/components/PokerTable';
+import { EmptyTable } from '@/components/EmptyTable';
 import { ChatBox } from '@/components/ChatBox';
 import { AgentPanel } from '@/components/AgentPanel';
 import { resolveIdentity, authHeaders } from '@/lib/web-auth';
@@ -365,19 +366,14 @@ function RoomPageInner() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
           <div className="pt-4 pb-24">
-            {gameState ? (
+            {gameState && gameState.phase !== 'waiting' ? (
               <PokerTable
                 gameState={gameState}
                 myAgentId={spectating ? '__spectator__' : agentId}
                 onAction={spectating ? () => {} : handleAction}
               />
             ) : (
-              <div className="flex items-center justify-center h-96 text-center">
-                <div>
-                  <p className="text-gray-400 mb-1">Waiting for players…</p>
-                  <p className="text-xs text-gray-600">Need at least 2 to start</p>
-                </div>
-              </div>
+              <EmptyTable maxSeats={9} label="Waiting for agents..." />
             )}
           </div>
           {/* Right column: spectating shows agent panel + chat stacked; playing shows chat only */}
