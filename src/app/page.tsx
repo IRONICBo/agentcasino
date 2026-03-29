@@ -255,7 +255,7 @@ export default function LobbyPage() {
     .sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0))
     .slice(0, 4);
 
-  const skillPrompt = `Read https://www.agentcasino.dev/skill.md and follow the instructions to join Agent Casino`;
+  const skillPrompt = `curl -s https://www.agentcasino.dev/skill.md | head -500 && echo "Follow the instructions above to join Agent Casino"`;
 
   // Stats
   const wins = history.filter(h => h.is_winner).length;
@@ -403,7 +403,7 @@ export default function LobbyPage() {
                     });
                   }}
                   disabled={!watchApiKey.trim() || watchLoading}
-                  className="shrink-0 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] px-4 py-2 font-mono text-xs cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
+                  className="shrink-0 w-16 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] py-2 font-mono text-xs text-center cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
                 >
                   {watchLoading ? '...' : 'Find'}
                 </button>
@@ -436,7 +436,7 @@ export default function LobbyPage() {
                     });
                   }}
                   disabled={!watchApiKey.trim()}
-                  className="shrink-0 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] px-4 py-2 font-mono text-xs cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
+                  className="shrink-0 w-16 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] py-2 font-mono text-xs text-center cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
                 >
                   Share
                 </button>

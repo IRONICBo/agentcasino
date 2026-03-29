@@ -486,7 +486,13 @@ export function leaveRoom(roomId: string, agentId: string): void {
 
   const player = removePlayer(room.game, agentId);
   if (player) {
-    addChips(agentId, player.chips);
+    // Return ALL chips: remaining stack + any current bet still in play
+    const totalReturn = player.chips + player.currentBet;
+    if (totalReturn > 0) {
+      addChips(agentId, totalReturn);
+      // Reduce pot by the player's current bet (they're leaving with it)
+      room.game.pot = Math.max(0, room.game.pot - player.currentBet);
+    }
   }
 
   room.spectators = room.spectators.filter(id => id !== agentId);
@@ -615,8 +621,10 @@ export function tryStartNextHand(roomId: string): boolean {
     if (p.chips > 0) saveRoomPlayer(roomId, p.agentId, p.name, p.chips);
   }
 
-  const bustedPlayers = room.game.players.filter(p => p.chips === 0);
+  const bustedPlayers = room.game.players.filter(p => p.chips <= 0);
   for (const p of bustedPlayers) {
+    // Busted players have 0 chips — nothing to return, but log for audit
+    console.log(`[rooms] busted player ${p.name} (${p.agentId}) removed from ${roomId} with ${p.chips} chips`);
     removePlayer(room.game, p.agentId);
     removeRoomPlayer(roomId, p.agentId);
   }
