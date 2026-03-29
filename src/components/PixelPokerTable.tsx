@@ -125,8 +125,19 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                     {Array.from({ length: 5 - gameState.communityCards.length }).map((_, i) => (
                       <div key={`e${i}`} style={{
                         width: 32, height: 44,
-                        border: '1px dashed var(--border)',
-                      }} />
+                        border: '2px solid var(--ink)',
+                        background: 'var(--ink)',
+                        boxShadow: '2px 2px 0 var(--border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <div style={{
+                          width: 20, height: 30,
+                          border: '1px solid var(--border)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontFamily: 'monospace', fontSize: 10, color: 'var(--border)',
+                          userSelect: 'none',
+                        }}>♠</div>
+                      </div>
                     ))}
                   </div>
 
@@ -153,13 +164,24 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                   }}>
                     ♠ ♥ ♦ ♣
                   </div>
-                  {/* 5 empty card slots */}
+                  {/* 5 face-down card slots */}
                   <div style={{ display: 'flex', gap: 4 }}>
                     {Array.from({ length: 5 }).map((_, i) => (
                       <div key={i} style={{
                         width: 28, height: 38,
-                        border: '1px dashed var(--border)',
-                      }} />
+                        border: '2px solid var(--ink)',
+                        background: 'var(--ink)',
+                        boxShadow: '2px 2px 0 var(--border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <div style={{
+                          width: 18, height: 26,
+                          border: '1px solid var(--border)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontFamily: 'monospace', fontSize: 8, color: 'var(--border)',
+                          userSelect: 'none',
+                        }}>♠</div>
+                      </div>
                     ))}
                   </div>
                   <div style={{

@@ -6,14 +6,18 @@ import { PlayingCard } from './PlayingCard';
 import { useState, useRef, useEffect } from 'react';
 
 // Seat positions for up to 9 players around an oval
-/** Calculate evenly-spaced seat positions around the bottom half (top reserved for dealer) */
+/** Calculate evenly-spaced seat positions — wider arc for more players */
 function seatCoords(totalPlayers: number): [number, number][] {
   const coords: [number, number][] = [];
+  // For 9 players, use a 240° arc; for fewer, use 180°
+  const arcDeg = totalPlayers > 6 ? 240 : 180;
+  const arcRad = (arcDeg / 180) * Math.PI;
+  const startAngle = (Math.PI - arcRad) / 2; // center the arc at bottom
   for (let i = 0; i < totalPlayers; i++) {
-    // Arc from left to right across the bottom half (PI = 180°)
-    const angle = Math.PI * (i / (totalPlayers - 1 || 1));
-    const left = 50 - 42 * Math.cos(angle);
-    const top = 42 + 48 * Math.sin(angle);
+    const t = totalPlayers > 1 ? i / (totalPlayers - 1) : 0.5;
+    const angle = startAngle + t * arcRad;
+    const left = 50 - 44 * Math.cos(angle);
+    const top = 38 + 52 * Math.sin(angle);
     coords.push([top, left]);
   }
   return coords;
@@ -171,11 +175,7 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
               <PlayingCard key={`${phaseKey}-${i}`} card={card} dealDelay={i * 130} />
             ))}
             {Array.from({ length: 5 - gameState.communityCards.length }).map((_, i) => (
-              <div key={`e-${i}`} style={{
-                width: 54, height: 76, borderRadius: 6,
-                border: '1px dashed rgba(255,255,255,0.1)',
-                background: 'rgba(255,255,255,0.025)',
-              }} />
+              <PlayingCard key={`e-${i}`} faceDown dealDelay={0} />
             ))}
           </div>
 
