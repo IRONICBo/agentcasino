@@ -76,11 +76,19 @@ const TABLE_NAMES: Record<string, string[]> = {
 
 // ─── Room store (global singleton) ───────────────────────────────────────────
 
+interface ChatMsg {
+  agentId: string;
+  name: string;
+  message: string;
+  timestamp: number;
+}
+
 interface ExtendedRoom extends Room {
   categoryId: string;
   tableNumber: number;
   stateVersion: number;
   turnDeadlineMs: number | null;
+  chatLog: ChatMsg[];
 }
 
 const globalAny = globalThis as any;
@@ -88,6 +96,20 @@ if (!globalAny.__casino_rooms) {
   globalAny.__casino_rooms = new Map<string, ExtendedRoom>();
 }
 const rooms: Map<string, ExtendedRoom> = globalAny.__casino_rooms;
+
+// ─── Hydration gate (blocks reads until cold-start restore completes) ────────
+
+let hydrationResolve: (() => void) | null = null;
+const hydrationReady: Promise<void> = globalAny.__casino_hydration_ready ??= new Promise<void>(r => { hydrationResolve = r; });
+// If the promise was already created in a previous hot-reload, resolve is null — that's fine, it's already resolved.
+if (!globalAny.__casino_hydration_resolve && hydrationResolve) {
+  globalAny.__casino_hydration_resolve = hydrationResolve;
+}
+
+/** Wait for cold-start hydration to finish before serving data */
+export function waitForHydration(): Promise<void> {
+  return hydrationReady;
+}
 
 // ─── Action timeout store (global singleton, survives hot reloads) ────────────
 
@@ -134,6 +156,7 @@ function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom
     createdAt: Date.now(),
     stateVersion: 0,
     turnDeadlineMs: null,
+    chatLog: [],
   };
   rooms.set(room.id, room);
   return room;
@@ -161,8 +184,18 @@ export function initDefaultRooms(): void {
       createFixedTable(cat.id, i);
     }
   }
-  // Async: restore seated players from Supabase after a cold start
-  hydrateFromDB();
+  // Restore seated players from Supabase, then open the hydration gate
+  hydrateFromDB().finally(() => {
+    const resolve = globalAny.__casino_hydration_resolve;
+    if (resolve) { resolve(); globalAny.__casino_hydration_resolve = null; }
+  });
+
+  // Evict ghost players every 2 minutes (in-process, not relying on cron)
+  if (!globalAny.__casino_evict_interval) {
+    globalAny.__casino_evict_interval = setInterval(() => {
+      evictGhostPlayers().catch(e => console.error('[rooms] periodic evict failed:', e));
+    }, 2 * 60 * 1000);
+  }
 }
 
 /**
@@ -303,10 +336,11 @@ export async function waitForStateChange(
 // ─── Listing ──────────────────────────────────────────────────────────────────
 
 function toRoomInfo(r: ExtendedRoom): RoomInfo {
+  const players = r.game?.players ?? [];
   return {
     id: r.id,
     name: r.name,
-    playerCount: r.game?.players.length ?? 0,
+    playerCount: players.length,
     maxPlayers: r.maxPlayers,
     smallBlind: r.smallBlind,
     bigBlind: r.bigBlind,
@@ -315,6 +349,8 @@ function toRoomInfo(r: ExtendedRoom): RoomInfo {
     categoryId: r.categoryId,
     tableNumber: r.tableNumber,
     createdAt: r.createdAt,
+    pot: r.game?.pot ?? 0,
+    totalChips: players.reduce((s, p) => s + p.chips, 0),
   };
 }
 
@@ -352,8 +388,9 @@ export function listCategories(recommended = false): (Omit<StakeCategory, 'table
   return STAKE_CATEGORIES.map(cat => {
     let tables = Array.from(rooms.values())
       .filter(r => r.categoryId === cat.id)
-      .sort((a, b) => a.tableNumber - b.tableNumber)
-      .map(toRoomInfo);
+      .map(toRoomInfo)
+      // Sort by pot descending, then totalChips descending, then table number
+      .sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0) || (a.tableNumber ?? 0) - (b.tableNumber ?? 0));
 
     if (recommended) {
       // Active tables + 1 empty seat per category
@@ -368,18 +405,22 @@ export function listCategories(recommended = false): (Omit<StakeCategory, 'table
   });
 }
 
-/** Remove in-memory players who are no longer in Supabase (used by cron after DB cleanup) */
+/** Remove in-memory players who are stale or missing from Supabase */
 export async function evictGhostPlayers(): Promise<number> {
   let evicted = 0;
+  const now = Date.now();
   for (const room of rooms.values()) {
     if (!room.game || room.game.players.length === 0) continue;
     const dbPlayers = await loadRoomPlayers(room.id);
-    const dbIds = new Set(dbPlayers.map(p => p.agentId));
+    const dbMap = new Map(dbPlayers.map(p => [p.agentId, p]));
     for (const p of [...room.game.players]) {
-      if (!dbIds.has(p.agentId)) {
+      const dbRow = dbMap.get(p.agentId);
+      // Evict if: not in DB at all, OR DB row is stale (no heartbeat within STALE_MS)
+      if (!dbRow || (now - dbRow.updatedAt) >= STALE_MS) {
         removePlayer(room.game, p.agentId);
+        if (dbRow) removeRoomPlayer(room.id, p.agentId); // also clean the DB row
         evicted++;
-        console.log(`[rooms] evicted ghost player ${p.agentId} from ${room.id}`);
+        console.log(`[rooms] evicted ghost player ${p.agentId} from ${room.id} (${dbRow ? 'stale' : 'missing'})`);
       }
     }
     if (room.game.players.length === 0) room.game = null;
@@ -635,6 +676,25 @@ export function getValidActionsForRoom(roomId: string): ReturnType<typeof getVal
   const room = rooms.get(roomId);
   if (!room || !room.game) return [];
   return getValidActions(room.game);
+}
+
+// ─── In-memory Chat ──────────────────────────────────────────────────────────
+
+const MAX_CHAT_MSGS = 100;
+
+export function addChatMessage(roomId: string, agentId: string, name: string, message: string): ChatMsg | null {
+  const room = rooms.get(roomId);
+  if (!room) return null;
+  const msg: ChatMsg = { agentId, name, message, timestamp: Date.now() };
+  room.chatLog.push(msg);
+  if (room.chatLog.length > MAX_CHAT_MSGS) room.chatLog = room.chatLog.slice(-MAX_CHAT_MSGS);
+  return msg;
+}
+
+export function getChatMessages(roomId: string, limit = 50): ChatMsg[] {
+  const room = rooms.get(roomId);
+  if (!room) return [];
+  return room.chatLog.slice(-limit);
 }
 
 /** Heartbeat — refresh updated_at in Supabase so the player isn't treated as stale */

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ClientGameState, ChatMessage, PlayerAction } from '@/lib/types';
 import { PokerTable } from '@/components/PokerTable';
+import { EmptyTable } from '@/components/EmptyTable';
 import { ChatBox } from '@/components/ChatBox';
 import { AgentPanel } from '@/components/AgentPanel';
 import { resolveIdentity, authHeaders } from '@/lib/web-auth';
@@ -364,21 +365,17 @@ function RoomPageInner() {
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
-          <div className="pt-4 pb-24">
-            {gameState && gameState.phase !== 'waiting' ? (
-              <PokerTable
-                gameState={gameState}
-                myAgentId={spectating ? '__spectator__' : agentId}
-                onAction={spectating ? () => {} : handleAction}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-96 text-center">
-                <div>
-                  <p className="text-gray-400 mb-1">Waiting for players...</p>
-                  <p className="text-xs text-gray-600">Need at least 2 to start</p>
-                </div>
-              </div>
-            )}
+          <div className="flex items-center justify-center min-h-[calc(100vh-6rem)] py-4">
+            <PokerTable
+              gameState={gameState && gameState.phase !== 'waiting' ? gameState : {
+                id: '', phase: 'waiting', players: [], communityCards: [],
+                pot: 0, sidePots: [], currentPlayerIndex: -1, dealerIndex: -1,
+                smallBlind: 0, bigBlind: 0, minRaise: 0, winners: null,
+                lastAction: null, stateVersion: 0, turnDeadline: null, turnTimeRemaining: null,
+              }}
+              myAgentId={spectating ? '__spectator__' : agentId}
+              onAction={spectating ? () => {} : handleAction}
+            />
           </div>
           {/* Right column: spectating shows agent panel + chat stacked; playing shows chat only */}
           <div className="flex flex-col gap-4 h-[600px] lg:h-[calc(100vh-6rem)]">

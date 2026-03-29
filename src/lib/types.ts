@@ -158,6 +158,8 @@ export interface RoomInfo {
   categoryId?: string;
   tableNumber?: number;
   createdAt?: number;
+  pot?: number;        // current hand pot (0 when idle)
+  totalChips?: number; // sum of all seated players' chips
 }
 
 export interface StakeCategory {

@@ -9,7 +9,11 @@
     "build:mimi-id": "cd packages/mimi-id && npm install --silent && npm run build",
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "eslint",
-    "mcp": "tsx mcp/casino-server.ts"
+    "mcp": "tsx mcp/casino-server.ts",
+    "test:agents": "bash test/test-agents.sh",
+    "test:agents:low": "bash test/test-agents.sh casino_low_1",
+    "test:agents:mid": "bash test/test-agents.sh casino_mid_1",
+    "test:agents:high": "bash test/test-agents.sh casino_high_1"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

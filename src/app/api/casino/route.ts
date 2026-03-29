@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateAgent, claimChips, getAgent, getChipBalance } from '@/lib/chips';
-import { recordGame, saveMessage, getRecentMessages } from '@/lib/casino-db';
+import { recordGame } from '@/lib/casino-db';
 import {
   initDefaultRooms, listRooms, listRecommendedRooms, listCategories,
   joinRoom, leaveRoom,
@@ -10,6 +10,9 @@ import {
   heartbeatPlayer,
   waitForStateChange,
   getAgentRoom,
+  waitForHydration,
+  addChatMessage,
+  getChatMessages,
 } from '@/lib/room-manager';
 import {
   verifyMimiLogin, simpleLogin, extractApiKey, resolveAgentId,
@@ -107,6 +110,7 @@ export async function GET(req: NextRequest) {
 
   switch (action) {
     case 'rooms': {
+      await waitForHydration();
       // Agents (Bearer token) get the full list; unauthenticated / browser get recommended
       const hasAuth = !!extractApiKey(req.headers.get('authorization'));
       const wantFull = req.nextUrl.searchParams.get('view') === 'all';
@@ -115,6 +119,7 @@ export async function GET(req: NextRequest) {
     }
 
     case 'categories': {
+      await waitForHydration();
       const hasAuth = !!extractApiKey(req.headers.get('authorization'));
       const wantFull = req.nextUrl.searchParams.get('view') === 'all';
       return NextResponse.json({ categories: listCategories(!(hasAuth || wantFull)) });
@@ -182,6 +187,7 @@ export async function GET(req: NextRequest) {
     }
 
     case 'game_state': {
+      await waitForHydration();
       const id = agentId || paramAgentId;
       if (!id) return err('Login required or provide agent_id');
       const roomId = req.nextUrl.searchParams.get('room_id');
@@ -196,6 +202,12 @@ export async function GET(req: NextRequest) {
         if (!isNaN(sinceVersion)) {
           await waitForStateChange(roomId, sinceVersion, 8_000);
         }
+      }
+
+      // Auto-advance: if stuck in showdown with enough players, start next hand
+      if (room.game?.phase === 'showdown' && room.game.players.length >= 2) {
+        const advanced = tryStartNextHand(roomId);
+        if (advanced) scheduleActionTimeout(roomId);
       }
 
       const state = getClientGameState(roomId, id);
@@ -233,8 +245,7 @@ export async function GET(req: NextRequest) {
       const rid = req.nextUrl.searchParams.get('room_id');
       if (!rid) return err('room_id required');
       const limit = parseInt(req.nextUrl.searchParams.get('limit') ?? '50');
-      const msgs = await getRecentMessages(rid, limit);
-      return NextResponse.json({ messages: msgs });
+      return NextResponse.json({ messages: getChatMessages(rid, limit) });
     }
 
     case 'leaderboard': {
@@ -421,7 +432,9 @@ export async function POST(req: NextRequest) {
       const error = joinRoom(body.room_id, id, agent.name, body.buy_in);
       if (error) return err(error);
 
-      const started = tryStartGame(body.room_id);
+      // If the table was stuck in showdown, try to start next hand now that someone joined
+      let started = tryStartNextHand(body.room_id);
+      if (!started) started = tryStartGame(body.room_id);
       if (started) scheduleActionTimeout(body.room_id);
       const state = getClientGameState(body.room_id, id);
 
@@ -474,10 +487,12 @@ export async function POST(req: NextRequest) {
           winners,
           startedAt:  room.createdAt,
         });
+        // Try to start next hand after a brief delay (show winner animation)
+        const rid = body.room_id;
         setTimeout(() => {
-          const nextHandStarted = tryStartNextHand(body.room_id);
-          if (nextHandStarted) scheduleActionTimeout(body.room_id);
-        }, 100);
+          const ok = tryStartNextHand(rid);
+          if (ok) scheduleActionTimeout(rid);
+        }, 3000);
         return NextResponse.json({
           success: true,
           move: body.move,
@@ -511,10 +526,8 @@ export async function POST(req: NextRequest) {
       if (!body.message) return err('message required');
       const agent = getAgent(id);
       const name = agent?.name ?? (body.agent_name as string | undefined) ?? id;
-      const timestamp = Date.now();
-      const chatMsg = { agentId: id, name, message: body.message as string, timestamp };
-      // Persist to Supabase
-      saveMessage(body.room_id, id, name, body.message as string);
+      const chatMsg = addChatMessage(body.room_id, id, name, body.message as string);
+      if (!chatMsg) return err('Room not found');
       return NextResponse.json({ success: true, ...chatMsg });
     }
 
