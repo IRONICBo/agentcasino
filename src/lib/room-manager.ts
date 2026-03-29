@@ -628,6 +628,10 @@ export function tryStartNextHand(roomId: string): boolean {
   return true;
 }
 
+// ─── Equity cache (avoid recalculating 500-sample Monte Carlo on every poll) ──
+
+const equityCache = new Map<string, { version: number; equity: Map<string, number> }>();
+
 // ─── Client state ─────────────────────────────────────────────────────────────
 
 export function getClientGameState(roomId: string, viewerAgentId: string): ClientGameState | null {
@@ -637,14 +641,21 @@ export function getClientGameState(roomId: string, viewerAgentId: string): Clien
   const game = room.game;
   const isShowdown = game.phase === 'showdown';
 
-  // Calculate win probabilities (skip during waiting/showdown)
+  // Calculate win probabilities (skip during waiting/showdown), with caching
   const showEquity = game.phase !== 'waiting' && game.phase !== 'showdown' && game.players.some(p => p.holeCards.length === 2);
-  const equity = showEquity
-    ? calculateEquity(
+  let equity: Map<string, number> | null = null;
+  if (showEquity) {
+    const cached = equityCache.get(roomId);
+    if (cached && cached.version === room.stateVersion) {
+      equity = cached.equity;
+    } else {
+      equity = calculateEquity(
         game.players.map(p => ({ agentId: p.agentId, holeCards: p.holeCards, hasFolded: p.hasFolded })),
         game.communityCards,
-      )
-    : null;
+      );
+      equityCache.set(roomId, { version: room.stateVersion, equity });
+    }
+  }
 
   const players: ClientPlayer[] = game.players.map(p => ({
     agentId: p.agentId,
