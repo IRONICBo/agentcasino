@@ -476,60 +476,123 @@ export default function LobbyPage() {
           {/* Right: Tables Panel */}
           <div className="bg-[var(--bg-page)] p-10 lg:p-16 flex flex-col overflow-y-auto max-h-[90vh] lg:max-h-none">
 
-            {/* Live Game Preview or Empty Table */}
-            <div className="mb-6">
-              {liveGame && liveGame.phase !== 'waiting' ? (
-                <a href={`/room/${liveRoomId}?spectate=1`} className="block border border-[var(--border)] bg-white p-4 transition-shadow hover:shadow-[2px_2px_0_var(--ink)]" style={{ textDecoration: 'none', color: 'inherit' }}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="status-dot" />
-                      <span className="font-mono text-[10px] tracking-widest uppercase" style={{ color: 'var(--ink-light)' }}>Live Now</span>
-                    </div>
-                    <span className="font-mono text-[10px]" style={{ color: 'var(--ink-light)' }}>{liveRoomName}</span>
-                  </div>
-                  {/* Community cards */}
-                  <div className="flex items-center justify-center gap-1.5 mb-3" style={{ minHeight: 48 }}>
-                    {liveGame.communityCards.length > 0 ? (
-                      liveGame.communityCards.map((card, i) => (
-                        <PlayingCard key={i} card={card} dealDelay={0} />
-                      ))
-                    ) : (
-                      <span className="font-mono text-xs" style={{ color: 'var(--ink-muted)' }}>Pre-flop</span>
-                    )}
-                  </div>
-                  {/* Pot + phase */}
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-xs font-medium">Pot: {liveGame.pot.toLocaleString()}</span>
-                    <span className="font-mono text-[10px] uppercase" style={{ color: 'var(--ink-light)' }}>{liveGame.phase}</span>
-                  </div>
-                  {/* Players */}
-                  <div className="flex flex-wrap gap-x-3 gap-y-1">
-                    {liveGame.players.map((p, i) => (
-                      <div key={p.agentId} className="flex items-center gap-1">
-                        <div
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ background: p.hasFolded ? '#ccc' : i === liveGame!.currentPlayerIndex ? '#10b981' : 'var(--ink)' }}
-                        />
-                        <span className={`font-mono text-[10px] ${p.hasFolded ? 'line-through' : ''}`} style={{ color: p.hasFolded ? 'var(--ink-muted)' : 'var(--ink)' }}>
-                          {p.name}
-                        </span>
-                        <span className="font-mono text-[9px]" style={{ color: 'var(--ink-light)' }}>
-                          {p.chips.toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </a>
-              ) : (
-                <div className="border border-[var(--border)] bg-white p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ink-muted)' }} />
-                    <span className="font-mono text-[10px] tracking-widest uppercase" style={{ color: 'var(--ink-light)' }}>No Active Games</span>
-                  </div>
-                  <EmptyTable maxSeats={6} label="Waiting for agents..." />
+            {/* Live Game Preview — pixel-art style */}
+            <a
+              href={liveGame && liveGame.phase !== 'waiting' ? `/room/${liveRoomId}?spectate=1` : undefined}
+              className="block mb-6 border-2 border-[var(--ink)] bg-white transition-shadow hover:shadow-[4px_4px_0_var(--ink)]"
+              style={{ textDecoration: 'none', color: 'inherit', boxShadow: '3px 3px 0 var(--ink)', cursor: liveGame && liveGame.phase !== 'waiting' ? 'pointer' : 'default' }}
+            >
+              {/* Header bar */}
+              <div className="flex items-center justify-between px-3 py-1.5 border-b-2 border-[var(--ink)]" style={{ background: 'var(--bg-page)' }}>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2" style={{ background: liveGame && liveGame.phase !== 'waiting' ? '#10b981' : 'var(--ink-light)' }} />
+                  <span className="font-mono text-[9px] tracking-widest uppercase font-bold">
+                    {liveGame && liveGame.phase !== 'waiting' ? 'LIVE' : 'NO ACTIVE GAMES'}
+                  </span>
                 </div>
-              )}
-            </div>
+                {liveGame && liveGame.phase !== 'waiting' && (
+                  <span className="font-mono text-[9px] uppercase" style={{ color: 'var(--ink-light)' }}>{liveRoomName}</span>
+                )}
+              </div>
+
+              {/* Table area */}
+              <div style={{ position: 'relative', padding: '12px' }}>
+                {/* Pixel grid bg */}
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  backgroundImage: 'linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px)',
+                  backgroundSize: '8px 8px',
+                }} />
+
+                {liveGame && liveGame.phase !== 'waiting' ? (
+                  <div style={{ position: 'relative' }}>
+                    {/* Phase + Pot */}
+                    <div className="flex items-center justify-center gap-3 mb-3">
+                      <span className="font-mono text-[10px] font-bold uppercase border border-[var(--ink)] px-2 py-0.5" style={{ boxShadow: '1px 1px 0 var(--ink)' }}>
+                        {liveGame.phase}
+                      </span>
+                      <span className="font-mono text-sm font-black">
+                        POT {liveGame.pot >= 1000 ? `${(liveGame.pot/1000).toFixed(0)}K` : liveGame.pot}
+                      </span>
+                    </div>
+
+                    {/* Community cards — pixel style */}
+                    <div className="flex items-center justify-center gap-1 mb-3">
+                      {liveGame.communityCards.map((card, i) => {
+                        const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
+                        const sym = card.suit === 'hearts' ? '♥' : card.suit === 'diamonds' ? '♦' : card.suit === 'clubs' ? '♣' : '♠';
+                        return (
+                          <div key={i} style={{
+                            width: 36, height: 50,
+                            border: '2px solid var(--ink)',
+                            background: '#fff',
+                            boxShadow: '2px 2px 0 var(--ink)',
+                            display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', justifyContent: 'center',
+                            fontFamily: 'monospace', gap: 0,
+                          }}>
+                            <span style={{ fontSize: 11, fontWeight: 900, color: isRed ? '#c0392b' : 'var(--ink)', lineHeight: 1 }}>{card.rank}</span>
+                            <span style={{ fontSize: 10, color: isRed ? '#c0392b' : 'var(--ink)', lineHeight: 1 }}>{sym}</span>
+                          </div>
+                        );
+                      })}
+                      {Array.from({ length: 5 - liveGame.communityCards.length }).map((_, i) => (
+                        <div key={`e${i}`} style={{
+                          width: 36, height: 50,
+                          border: '1px dashed var(--border)',
+                        }} />
+                      ))}
+                    </div>
+
+                    {/* Last action ticker */}
+                    {liveGame.lastAction && (() => {
+                      const a = liveGame.lastAction;
+                      const p = liveGame.players.find(pl => pl.agentId === a.agentId);
+                      const name = p?.name ?? a.agentId.slice(0, 8);
+                      const label = a.action.toUpperCase().replace('_', ' ');
+                      const text = a.amount ? `${name} ${label} ${a.amount >= 1000 ? `${(a.amount/1000).toFixed(0)}K` : a.amount}` : `${name} ${label}`;
+                      return (
+                        <div className="text-center mb-3">
+                          <span className="font-mono text-[9px] font-bold border border-[var(--ink)] px-2 py-0.5 bg-[var(--bg-page)]">
+                            {text}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Players grid */}
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {liveGame.players.map((p, i) => {
+                        const isActive = i === liveGame!.currentPlayerIndex;
+                        return (
+                          <div key={p.agentId} style={{
+                            border: isActive ? '2px solid var(--ink)' : '1px solid var(--border)',
+                            background: isActive ? 'var(--ink)' : 'var(--bg-page)',
+                            color: isActive ? 'var(--bg-page)' : 'var(--ink)',
+                            padding: '2px 6px',
+                            boxShadow: isActive ? '2px 2px 0 var(--border)' : 'none',
+                            opacity: p.hasFolded ? 0.35 : 1,
+                            fontFamily: 'monospace',
+                          }}>
+                            <div style={{ fontSize: 9, fontWeight: 700, textDecoration: p.hasFolded ? 'line-through' : 'none' }}>
+                              {p.name}
+                            </div>
+                            <div style={{ fontSize: 8 }}>
+                              {p.chips >= 1000 ? `${(p.chips/1000).toFixed(0)}K` : p.chips}
+                              {p.currentBet > 0 && !p.hasFolded && <span> | BET {p.currentBet >= 1000 ? `${(p.currentBet/1000).toFixed(0)}K` : p.currentBet}</span>}
+                              {p.hasFolded && ' FOLD'}
+                              {p.isAllIn && ' ALL IN'}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <EmptyTable maxSeats={6} label="Waiting for agents..." />
+                )}
+              </div>
+            </a>
 
             <div className="flex items-baseline justify-between mb-4">
               <span className="font-mono text-xs tracking-[0.12em] uppercase" style={{ color: 'var(--ink-light)', fontSize: '.72rem' }}>
