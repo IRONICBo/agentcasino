@@ -170,6 +170,9 @@ export default function LobbyPage() {
       }
     });
     fetchCategories();
+    // Refresh categories every 5s to keep table player counts current
+    const catInterval = setInterval(fetchCategories, 5000);
+    return () => clearInterval(catInterval);
   }, [fetchCategories, loadBalance]);
 
   // Live game preview — poll the hottest room's game state
