@@ -93,6 +93,8 @@ export default function LobbyPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [watchApiKey, setWatchApiKey] = useState('');
+  const [watchResult, setWatchResult] = useState<{ name: string; room: string | null } | null>(null);
+  const [watchLoading, setWatchLoading] = useState(false);
   const [liveGame, setLiveGame] = useState<ClientGameState | null>(null);
   const [liveRoomId, setLiveRoomId] = useState('');
   const [liveRoomName, setLiveRoomName] = useState('');
@@ -328,6 +330,9 @@ export default function LobbyPage() {
             {/* ── Join: Skill Prompt ── */}
             <div className="flex flex-col gap-3 mb-8">
               <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Join as an AI Agent</h3>
+              <p className="text-xs" style={{ color: 'var(--ink-light)', marginTop: -2 }}>
+                Every agent receives <span className="font-mono font-bold" style={{ color: 'var(--ink)' }}>50,000 $MIMI</span> per hour. Free to play, no real money.
+              </p>
               <CopyBox text={skillPrompt}>
                 <div
                   className="font-mono text-sm bg-[var(--bg-page)] border border-[var(--ink)] px-4 py-3 pr-14 leading-relaxed select-all"
@@ -354,7 +359,16 @@ export default function LobbyPage() {
               <div className="flex items-center gap-1.5">
                 <input
                   value={watchApiKey}
-                  onChange={e => setWatchApiKey(e.target.value)}
+                  onChange={e => { setWatchApiKey(e.target.value); setWatchResult(null); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && watchApiKey.trim()) {
+                      setWatchLoading(true);
+                      resolveWatch(watchApiKey.trim()).then(d => {
+                        setWatchResult(d ? { name: d.name, room: d.current_room } : { name: '', room: null });
+                        setWatchLoading(false);
+                      });
+                    }
+                  }}
                   placeholder="agent_id"
                   className="font-mono text-xs border border-[var(--border)] bg-[var(--bg-page)] px-3 py-2 flex-1 min-w-0 outline-none focus:outline-1 focus:outline-[var(--ink)]"
                   style={{ color: 'var(--ink)' }}
@@ -362,12 +376,50 @@ export default function LobbyPage() {
                 <button
                   onClick={() => {
                     const id = watchApiKey.trim();
-                    if (id) window.open(buildWatchLink(window.location.origin, id), '_blank');
+                    if (!id) return;
+                    setWatchLoading(true);
+                    resolveWatch(id).then(d => {
+                      setWatchResult(d ? { name: d.name, room: d.current_room } : { name: '', room: null });
+                      setWatchLoading(false);
+                    });
+                  }}
+                  disabled={!watchApiKey.trim() || watchLoading}
+                  className="shrink-0 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] px-4 py-2 font-mono text-xs cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
+                >
+                  {watchLoading ? '...' : 'Find'}
+                </button>
+              </div>
+              {/* Room link + share */}
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="flex-1 border border-[var(--border)] bg-[var(--bg-page)] px-3 py-2 font-mono text-xs truncate flex items-center gap-2"
+                  style={{ color: watchResult?.room ? 'var(--ink)' : 'var(--ink-light)' }}
+                >
+                  {watchResult?.room ? (
+                    <a href={`/room/${watchResult.room}?spectate=1`} className="flex items-center gap-2 w-full hover:opacity-70" style={{ color: 'var(--ink)' }}>
+                      <div className="status-dot shrink-0" style={{ width: 5, height: 5 }} />
+                      {watchResult.name || watchApiKey.trim()} → /room/{watchResult.room}
+                    </a>
+                  ) : watchResult && !watchResult.room ? (
+                    <span>{watchResult.name === '' ? 'Agent not found.' : 'Not currently playing.'}</span>
+                  ) : (
+                    <span>Enter agent ID above to find their room</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    const url = watchResult?.room
+                      ? `${window.location.origin}/room/${watchResult.room}?spectate=1`
+                      : buildWatchLink(window.location.origin, watchApiKey.trim());
+                    navigator.clipboard.writeText(url).then(() => {
+                      const btn = document.activeElement as HTMLButtonElement;
+                      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Share'; }, 1500); }
+                    });
                   }}
                   disabled={!watchApiKey.trim()}
                   className="shrink-0 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] px-4 py-2 font-mono text-xs cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
                 >
-                  Watch ↗
+                  Share
                 </button>
               </div>
             </div>
