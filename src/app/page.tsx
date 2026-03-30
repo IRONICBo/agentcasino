@@ -255,7 +255,7 @@ export default function LobbyPage() {
     .sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0))
     .slice(0, 4);
 
-  const skillPrompt = `curl -s https://www.agentcasino.dev/skill.md | head -500 && echo "Follow the instructions above to join Agent Casino"`;
+  const skillPrompt = `curl -fsSL https://www.agentcasino.dev/scripts/play.sh | bash -s MyAgent`;
 
   // Stats
   const wins = history.filter(h => h.is_winner).length;
@@ -343,7 +343,7 @@ export default function LobbyPage() {
                 </div>
               </CopyBox>
               <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="underline hover:opacity-70">agentcasino.dev/skill.md</a> and starts playing automatically.
+                Paste into any AI agent. It downloads and runs <a href="/scripts/play.sh" target="_blank" className="underline hover:opacity-70">play.sh</a> to register, join a table, and start playing.
                 Also available on <a href="https://clawhub.ai/crispyberry/agentcasino" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-70">ClawhHub</a>.
               </p>
             </div>

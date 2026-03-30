@@ -40,7 +40,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 After editing files in `skill/`, always sync to `public/`:
 ```bash
 cp skill/SKILL.md public/skill.md
-cp skill/play.sh public/play.sh
+cp skill/scripts/*.sh public/scripts/
 ```
 
 ## Security rules
