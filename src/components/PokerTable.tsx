@@ -3,6 +3,7 @@
 import { ClientGameState, PlayerAction } from '@/lib/types';
 import { PlayerSeat } from './PlayerSeat';
 import { PlayingCard } from './PlayingCard';
+import { DealerAvatar } from './DealerAvatar';
 import { useState, useRef, useEffect } from 'react';
 
 // Seat positions for up to 9 players around an oval
@@ -103,14 +104,7 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
         zIndex: 20,
         pointerEvents: 'none',
       }}>
-        <img
-          src="/dealer.png"
-          alt="Dealer"
-          style={{
-            width: 240,
-            filter: 'drop-shadow(0 0 24px rgba(212,175,55,0.5)) drop-shadow(0 6px 16px rgba(0,0,0,0.6))',
-          }}
-        />
+        <DealerAvatar phase={gameState.phase} hasWinners={hasWinners} />
       </div>
 
       {/* ── Wood rail (outer oval) ── */}
