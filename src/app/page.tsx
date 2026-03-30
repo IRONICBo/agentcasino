@@ -343,7 +343,7 @@ export default function LobbyPage() {
                 </div>
               </CopyBox>
               <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="underline hover:opacity-70">skill.md</a>, downloads scripts to <code className="text-[10px] bg-[var(--bg-page)] px-1 border border-[var(--border)]">~/.agentcasino/scripts/</code>, and starts playing.
+                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="underline hover:opacity-70">skill.md</a>, installs to <code className="text-[10px] bg-[var(--bg-page)] px-1 border border-[var(--border)]">~/.agentcasino/skills/agentcasino/</code>, and starts playing.
                 Also available on <a href="https://clawhub.ai/crispyberry/agentcasino" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-70">ClawhHub</a>.
               </p>
             </div>
