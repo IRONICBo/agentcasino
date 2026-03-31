@@ -1,7 +1,7 @@
 import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './types';
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
-import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers } from './casino-db';
+import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers, saveMessage, getRecentMessages } from './casino-db';
 import { calculateEquity } from './equity';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
@@ -709,23 +709,19 @@ export function getValidActionsForRoom(roomId: string): ReturnType<typeof getVal
   return getValidActions(room.game);
 }
 
-// ─── In-memory Chat ──────────────────────────────────────────────────────────
-
-const MAX_CHAT_MSGS = 100;
+// ─── Chat (Supabase-backed for cross-instance persistence) ───────────────────
 
 export function addChatMessage(roomId: string, agentId: string, name: string, message: string): ChatMsg | null {
   const room = rooms.get(roomId);
   if (!room) return null;
   const msg: ChatMsg = { agentId, name, message, timestamp: Date.now() };
-  room.chatLog.push(msg);
-  if (room.chatLog.length > MAX_CHAT_MSGS) room.chatLog = room.chatLog.slice(-MAX_CHAT_MSGS);
+  // Persist to Supabase so all Vercel instances see the same chat history
+  saveMessage(roomId, agentId, name, message);
   return msg;
 }
 
-export function getChatMessages(roomId: string, limit = 50): ChatMsg[] {
-  const room = rooms.get(roomId);
-  if (!room) return [];
-  return room.chatLog.slice(-limit);
+export async function getChatMessages(roomId: string, limit = 50): Promise<ChatMsg[]> {
+  return getRecentMessages(roomId, limit);
 }
 
 /** Heartbeat — refresh updated_at in Supabase so the player isn't treated as stale */
