@@ -28,7 +28,7 @@ import {
 import {
   getGamePlans, getActiveGamePlan, setGamePlan, getStrategyCatalog,
 } from '@/lib/game-plans';
-import { getStats, getAllStats } from '@/lib/stats';
+import { getStats, getAllStats, getStatsFromDB } from '@/lib/stats';
 import { listAgents } from '@/lib/chips';
 
 // Allow up to 15s for long-poll responses on Vercel
@@ -258,11 +258,13 @@ export async function GET(req: NextRequest) {
     }
 
     case 'stats': {
+      await waitForHydration();
       const sid = agentId || paramAgentId;
       if (sid) {
-        return NextResponse.json(getStats(sid));
+        // Read from DB for cross-instance accuracy; volatile currentStreak merged from memory
+        return NextResponse.json(await getStatsFromDB(sid));
       }
-      // No agent_id → return leaderboard-style stats for all agents
+      // No agent_id → in-memory bulk list (leaderboard merges DB anyway)
       return NextResponse.json({ agents: getAllStats() });
     }
 
@@ -274,30 +276,39 @@ export async function GET(req: NextRequest) {
     }
 
     case 'leaderboard': {
-      // Read from Supabase for accurate cross-instance data
+      // All data read directly from Supabase — no in-memory stats dependency
       const dbBoard = await getLeaderboard(50);
-      const inMemStats = getAllStats();
-      const statsById = new Map(inMemStats.map(s => [s.agent_id, s]));
+
+      function pctDB(n: number, d: number) { return d > 0 ? Math.round((n / d) * 1000) / 10 : 0; }
+      function afDB(agg: number, pas: number) {
+        if (pas === 0) return agg > 0 ? 99 : 0;
+        return Math.round((agg / pas) * 100) / 100;
+      }
 
       const board = dbBoard.map((a: any, i: number) => {
-        const s = statsById.get(a.id);
-        // Only show poker stats if agent has actual tracking data
-        const hasStats = s && (s.raw.vpipHands > 0 || s.raw.aggressiveActions > 0 || s.raw.showdownHands > 0);
+        const hands   = a.games_played ?? 0;
+        const vpipH   = a.vpip_hands   ?? 0;
+        const pfrH    = a.pfr_hands    ?? 0;
+        const aggAct  = a.aggressive_actions ?? 0;
+        const pasAct  = a.passive_actions    ?? 0;
+        const sdH     = a.showdown_hands  ?? 0;
+        const sdW     = a.showdown_wins   ?? 0;
+        // Only show computed stats if agent has actual tracking data
+        const hasStats = vpipH > 0 || aggAct > 0 || sdH > 0;
         return {
           rank:      i + 1,
           agent_id:  a.id,
           name:      a.name,
-          chips:     a.chips,  // wallet + at-table, computed in getLeaderboard
-          hands:     s?.hands_played ?? (a.games_played ?? 0),
+          chips:     a.chips,
+          hands,
           games_won: a.games_won ?? 0,
-          vpip:      hasStats ? s!.vpip_pct : null,  // percentage 0-100
-          pfr:       hasStats ? s!.pfr_pct  : null,
-          af:        hasStats ? s!.af       : null,
-          wtsd:      hasStats ? s!.wtsd_pct : null,
-          wsd:       hasStats ? s!.w_sd_pct : null,
+          vpip:      hasStats ? pctDB(vpipH,  hands) : null,
+          pfr:       hasStats ? pctDB(pfrH,   hands) : null,
+          af:        hasStats ? afDB(aggAct, pasAct)  : null,
+          wtsd:      hasStats ? pctDB(sdH,   hands)  : null,
+          wsd:       hasStats ? pctDB(sdW,   sdH)    : null,
         };
       });
-      // Re-sort by true chips after merging table chips
       board.sort((a: any, b: any) => b.chips - a.chips);
       board.forEach((e: any, i: number) => { e.rank = i + 1; });
       return NextResponse.json({ leaderboard: board, total: board.length });

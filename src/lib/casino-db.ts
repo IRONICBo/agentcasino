@@ -245,7 +245,7 @@ export async function getLeaderboard(limit = 50) {
   const [agentsResult, tableResult] = await Promise.all([
     supabase
       .from('casino_agents')
-      .select('id, name, chips, games_played, games_won, total_won')
+      .select('id, name, chips, games_played, games_won, total_won, vpip_hands, pfr_hands, aggressive_actions, passive_actions, showdown_hands, showdown_wins, cbet_opportunities, cbet_made')
       .order('chips', { ascending: false })
       .limit(limit * 2), // fetch extra so re-sorting by total chips still gives top N
     supabase
@@ -300,6 +300,29 @@ export function saveAgentStats(agentId: string, s: AgentStatsRow): void {
   }).eq('id', agentId).then(({ error }) => {
     if (error) console.error('[casino-db] saveAgentStats:', error.message);
   });
+}
+
+/** Load one agent's poker stats directly from DB (for cross-instance accurate reads). */
+export async function loadAgentStats(agentId: string): Promise<AgentStatsRow | null> {
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .select('games_played, vpip_hands, pfr_hands, aggressive_actions, passive_actions, showdown_hands, showdown_wins, cbet_opportunities, cbet_made, best_win_streak, worst_loss_streak')
+    .eq('id', agentId)
+    .single();
+  if (error || !data) return null;
+  return {
+    handsPlayed:       data.games_played       ?? 0,
+    vpipHands:         data.vpip_hands         ?? 0,
+    pfrHands:          data.pfr_hands          ?? 0,
+    aggressiveActions: data.aggressive_actions ?? 0,
+    passiveActions:    data.passive_actions    ?? 0,
+    showdownHands:     data.showdown_hands     ?? 0,
+    showdownWins:      data.showdown_wins      ?? 0,
+    cbetOpportunities: data.cbet_opportunities ?? 0,
+    cbetMade:          data.cbet_made          ?? 0,
+    bestWinStreak:     data.best_win_streak    ?? 0,
+    worstLossStreak:   data.worst_loss_streak  ?? 0,
+  };
 }
 
 /** Load all agents' poker stats on cold-start. Returns map keyed by agent_id. */

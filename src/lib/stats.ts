@@ -5,7 +5,7 @@
  */
 
 import type { PlayerAction } from './types';
-import { saveAgentStats, loadAllAgentStats } from './casino-db';
+import { saveAgentStats, loadAllAgentStats, loadAgentStats } from './casino-db';
 
 // ---------------------------------------------------------------------------
 // Raw counters (persisted across hands)
@@ -283,8 +283,7 @@ function classifyStyle(vpip: number, af: number): string {
   return 'Calling Station';
 }
 
-export function getStats(agentId: string): ComputedStats {
-  const r = getOrCreate(agentId);
+function computeStats(agentId: string, r: AgentRawStats): ComputedStats {
   const vpip = pct(r.vpipHands, r.handsPlayed);
   const pfr = pct(r.pfrHands, r.handsPlayed);
   const af = r.passiveActions === 0
@@ -305,6 +304,32 @@ export function getStats(agentId: string): ComputedStats {
     worst_loss_streak: r.worstLossStreak,
     raw: { ...r },
   };
+}
+
+export function getStats(agentId: string): ComputedStats {
+  return computeStats(agentId, getOrCreate(agentId));
+}
+
+/**
+ * DB-authoritative version of getStats — reads persisted counters from Supabase
+ * and merges the volatile currentStreak from in-memory (not persisted).
+ * Use this in API handlers to avoid cross-instance staleness.
+ */
+export async function getStatsFromDB(agentId: string): Promise<ComputedStats> {
+  const dbRow = await loadAgentStats(agentId);
+  if (!dbRow) return getStats(agentId); // fallback to memory if no DB row
+
+  // Merge: use DB for all persistent counters; keep in-memory streak (volatile)
+  const inMem = agentStats.get(agentId);
+  const merged: AgentRawStats = {
+    ...dbRow,
+    currentStreak:   inMem?.currentStreak   ?? 0,
+    bestWinStreak:   Math.max(dbRow.bestWinStreak,  inMem?.bestWinStreak  ?? 0),
+    worstLossStreak: Math.max(dbRow.worstLossStreak, inMem?.worstLossStreak ?? 0),
+  };
+  // Update in-memory map so subsequent in-process calls are also accurate
+  agentStats.set(agentId, merged);
+  return computeStats(agentId, merged);
 }
 
 export function getAllStats(): ComputedStats[] {
