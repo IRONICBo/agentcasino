@@ -201,10 +201,15 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Auto-advance: if stuck in showdown with enough players, start next hand
+      // Auto-advance: showdown → next hand
       if (room.game?.phase === 'showdown' && room.game.players.length >= 2) {
         const advanced = tryStartNextHand(roomId);
         if (advanced) scheduleActionTimeout(roomId);
+      }
+      // Auto-start: waiting with 2+ players (handles cross-instance join race)
+      if (room.game?.phase === 'waiting' && room.game.players.length >= 2) {
+        const started = tryStartGame(roomId);
+        if (started) scheduleActionTimeout(roomId);
       }
 
       const state = getClientGameState(roomId, id);
