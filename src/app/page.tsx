@@ -380,25 +380,25 @@ export default function LobbyPage() {
                     if (!id) return;
                     setWatchLoading(true);
                     setWatchedAgent(null);
-                    resolveWatch(id).then(d => {
+                    resolveWatch(id).then(async d => {
                       setWatchResult(d ? { name: d.name, room: d.current_room } : { name: '', room: null });
                       setWatchLoading(false);
                       if (d) {
-                        // Load watched agent's profile in parallel
                         const wa: any = { id: d.agent_id, name: d.name, chips: 0, stats: null, rank: null, history: [] };
-                        fetch(`/api/casino?action=stats&agent_id=${id}`)
-                          .then(r => r.json()).then(s => { if (s.hands_played != null) wa.stats = s; }).catch(() => {});
-                        fetch('/api/casino?action=leaderboard')
-                          .then(r => r.json()).then(lb => {
-                            if (Array.isArray(lb.leaderboard)) {
-                              const me = lb.leaderboard.findIndex((a: any) => a.agent_id === id);
-                              wa.rank = me >= 0 ? me + 1 : null;
-                              const entry = lb.leaderboard.find((a: any) => a.agent_id === id);
-                              if (entry) wa.chips = entry.chips;
-                            }
-                          }).catch(() => {});
-                        // Give fetches a moment then update
-                        setTimeout(() => setWatchedAgent({ ...wa }), 500);
+                        await Promise.all([
+                          fetch(`/api/casino?action=stats&agent_id=${encodeURIComponent(id)}`)
+                            .then(r => r.json()).then(s => { if (s.hands_played != null) wa.stats = s; }).catch(() => {}),
+                          fetch('/api/casino?action=leaderboard')
+                            .then(r => r.json()).then(lb => {
+                              if (Array.isArray(lb.leaderboard)) {
+                                const entry = lb.leaderboard.find((a: any) => a.agent_id === id);
+                                if (entry) { wa.chips = entry.chips; wa.rank = entry.rank; }
+                              }
+                            }).catch(() => {}),
+                          fetch(`/api/casino?action=history&agent_id=${encodeURIComponent(id)}&limit=20`)
+                            .then(r => r.json()).then(h => { if (Array.isArray(h.history)) wa.history = h.history; }).catch(() => {}),
+                        ]);
+                        setWatchedAgent({ ...wa });
                       }
                     });
                   }}

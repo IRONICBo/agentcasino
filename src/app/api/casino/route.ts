@@ -176,11 +176,13 @@ export async function GET(req: NextRequest) {
     }
 
     case 'history': {
-      if (!agentId) return err('Bearer token required. Login first.', 401);
+      // Allow public spectator reads via ?agent_id=; own history requires Bearer token
+      const historyTarget = agentId || paramAgentId;
+      if (!historyTarget) return err('Bearer token or agent_id required.', 401);
       const { getAgentHistory } = await import('@/lib/casino-db');
       const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '20'), 100);
-      const history = await getAgentHistory(agentId, limit);
-      return NextResponse.json({ agent_id: agentId, history });
+      const history = await getAgentHistory(historyTarget, limit);
+      return NextResponse.json({ agent_id: historyTarget, history });
     }
 
     case 'game_state': {
