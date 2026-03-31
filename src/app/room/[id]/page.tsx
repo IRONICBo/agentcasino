@@ -366,7 +366,7 @@ function RoomPageInner() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
           <div className="flex items-center justify-center min-h-[calc(100vh-6rem)] py-4">
             <PokerTable
-              gameState={gameState && gameState.phase !== 'waiting' ? gameState : {
+              gameState={gameState ?? {
                 id: '', phase: 'waiting', players: [], communityCards: [],
                 pot: 0, sidePots: [], currentPlayerIndex: -1, dealerIndex: -1,
                 smallBlind: 0, bigBlind: 0, minRaise: 0, winners: null,
