@@ -194,19 +194,27 @@ export async function GET(req: NextRequest) {
 
       // Long-poll: wait for a state change if ?since=N is provided
       const sinceParam = req.nextUrl.searchParams.get('since');
+      let pollTimedOutStale = false;
       if (sinceParam !== null) {
         const sinceVersion = parseInt(sinceParam, 10);
         if (!isNaN(sinceVersion)) {
           await waitForStateChange(roomId, sinceVersion, 8_000);
+          // If local stateVersion still matches sinceVersion after the wait, this instance
+          // may be stale — the action was processed on a different Vercel instance.
+          if (sinceVersion > 0 && room.stateVersion === sinceVersion) {
+            pollTimedOutStale = true;
+          }
         }
       }
 
-      // Cross-instance recovery: if this instance has no active game but DB does, restore it
-      if (!room.game || (room.game.phase === 'waiting' && room.game.players.length === 0)) {
+      // Cross-instance recovery: restore from DB when:
+      //   1. This instance has no active game, OR
+      //   2. Long-poll timed out without a local change (stale cross-instance state)
+      if (!room.game || (room.game.phase === 'waiting' && room.game.players.length === 0) || pollTimedOutStale) {
         const saved = await loadRoomState(roomId);
-        if (saved?.game) {
+        if (saved?.game && saved.stateVersion > room.stateVersion) {
           const g = saved.game as any;
-          if (g.phase && g.phase !== 'waiting' && saved.stateVersion > room.stateVersion) {
+          if (g.phase && g.phase !== 'waiting') {
             room.game = g;
             room.stateVersion = saved.stateVersion;
             if (g.phase !== 'showdown') scheduleActionTimeout(roomId);

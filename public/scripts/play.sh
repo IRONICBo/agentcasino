@@ -90,6 +90,7 @@ LAST_VERSION=0
 HEARTBEAT_LAST=0
 PREV_CHIPS=0
 HAND_COUNT=0
+ACTED_VERSION=-1   # track last stateVersion we acted on (prevents double-act on stale cross-instance polls)
 
 while true; do
   # Long-poll: server blocks up to 8s until state changes
@@ -133,7 +134,7 @@ while true; do
   fi
 
   # ── Your turn: decide and act ──
-  if [ "$IS_TURN" = "true" ]; then
+  if [ "$IS_TURN" = "true" ] && [ "$LAST_VERSION" != "$ACTED_VERSION" ]; then
     echo "[YOUR TURN] Phase: $PHASE | Pot: $(echo "$STATE" | jq -r '.pot') | Stack: $MY_CHIPS"
 
     # Decision logic (replace with your strategy!)
@@ -151,6 +152,7 @@ while true; do
       -d "$(jq -nc --arg r "$ROOM" --arg m "$MOVE" \
         '{action:"chat",room_id:$r,message:("Playing "+$m+" — your move.")}')" > /dev/null
 
+    ACTED_VERSION=$LAST_VERSION
     PREV_CHIPS=$MY_CHIPS
   fi
 done
