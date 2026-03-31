@@ -9,35 +9,38 @@ import { Agent, WinnerInfo, Player } from './types';
 
 // ── Agents ──────────────────────────────────────────────────────────────────
 
-/** Load all agent chip balances from DB on server startup */
+/** Load all agents from DB on server startup (includes claim tracking) */
 export async function loadAgents(): Promise<Map<string, Agent>> {
   const { data, error } = await supabase
     .from('casino_agents')
-    .select('id, name, chips');
+    .select('id, name, chips, claims_today, last_claim_at, last_claim_date');
 
   if (error) { console.error('[casino-db] loadAgents:', error.message); return new Map(); }
 
   const map = new Map<string, Agent>();
   for (const row of data ?? []) {
     map.set(row.id, {
-      id: row.id,
-      name: row.name,
-      chips: row.chips,
-      claimsToday:    0,
-      lastClaimAt:    0,
-      lastClaimDate:  '',
-      createdAt:      Date.now(),
+      id:            row.id,
+      name:          row.name,
+      chips:         row.chips,
+      claimsToday:   row.claims_today    ?? 0,
+      lastClaimAt:   row.last_claim_at   ?? 0,
+      lastClaimDate: row.last_claim_date ?? '',
+      createdAt:     Date.now(),
     });
   }
   return map;
 }
 
-/** Upsert agent after any chip change */
+/** Upsert agent — persists chips AND claim tracking */
 export function saveAgent(agent: Agent): void {
   supabase.from('casino_agents').upsert({
-    id:    agent.id,
-    name:  agent.name,
-    chips: agent.chips,
+    id:              agent.id,
+    name:            agent.name,
+    chips:           agent.chips,
+    claims_today:    agent.claimsToday,
+    last_claim_at:   agent.lastClaimAt,
+    last_claim_date: agent.lastClaimDate,
   }, { onConflict: 'id' }).then(({ error }) => {
     if (error) console.error('[casino-db] saveAgent:', error.message);
   });
@@ -348,4 +351,54 @@ export async function getAgentHistory(agentId: string, limit = 20) {
     chips_end:    row.chips_end,
     ended_at:     (row.casino_games as any)?.ended_at,
   }));
+}
+
+// ── Room Game State ──────────────────────────────────────────────────────────
+
+/** Persist the full GameState JSON after every action (fire-and-forget). */
+export function saveRoomState(roomId: string, game: unknown, stateVersion: number): void {
+  supabase.from('casino_room_state').upsert({
+    room_id:       roomId,
+    game_json:     game,
+    state_version: stateVersion,
+  }, { onConflict: 'room_id' }).then(({ error }) => {
+    if (error) console.error('[casino-db] saveRoomState:', error.message);
+  });
+}
+
+/** Delete persisted state when a room becomes empty. */
+export function deleteRoomState(roomId: string): void {
+  supabase.from('casino_room_state')
+    .delete().eq('room_id', roomId)
+    .then(({ error }) => {
+      if (error) console.error('[casino-db] deleteRoomState:', error.message);
+    });
+}
+
+/** Load one room's saved game state (for cross-instance recovery). */
+export async function loadRoomState(
+  roomId: string,
+): Promise<{ game: unknown; stateVersion: number } | null> {
+  const { data, error } = await supabase
+    .from('casino_room_state')
+    .select('game_json, state_version')
+    .eq('room_id', roomId)
+    .single();
+  if (error || !data) return null;
+  return { game: data.game_json, stateVersion: data.state_version ?? 0 };
+}
+
+/** Load ALL rooms' game states on cold-start hydration. */
+export async function loadAllRoomStates(): Promise<
+  Map<string, { game: unknown; stateVersion: number }>
+> {
+  const { data, error } = await supabase
+    .from('casino_room_state')
+    .select('room_id, game_json, state_version');
+  if (error) { console.error('[casino-db] loadAllRoomStates:', error.message); return new Map(); }
+  const map = new Map<string, { game: unknown; stateVersion: number }>();
+  for (const row of data ?? []) {
+    map.set(row.room_id, { game: row.game_json, stateVersion: row.state_version ?? 0 });
+  }
+  return map;
 }

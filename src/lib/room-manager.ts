@@ -1,7 +1,7 @@
 import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './types';
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
-import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers, saveMessage, getRecentMessages } from './casino-db';
+import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers, saveMessage, getRecentMessages, saveRoomState, deleteRoomState, loadAllRoomStates } from './casino-db';
 import { calculateEquity } from './equity';
 import { hydrateAgentStats } from './stats';
 
@@ -255,6 +255,9 @@ async function hydrateFromDB(): Promise<void> {
   // Load persisted poker stats into in-memory agentStats map
   await hydrateAgentStats();
 
+  // Restore active game states (runs in parallel with player hydration)
+  const roomStatesPromise = loadAllRoomStates();
+
   try {
     const allPlayers = await loadAllRoomPlayers();
     const now = Date.now();
@@ -296,6 +299,28 @@ async function hydrateFromDB(): Promise<void> {
   } catch (e) {
     console.error('[rooms] hydrateFromDB failed:', e);
   }
+
+  // Restore active game states (phase/cards/pot) from DB
+  try {
+    const roomStates = await roomStatesPromise;
+    for (const [rid, saved] of roomStates) {
+      const room = rooms.get(rid);
+      if (!room) continue;
+      const savedGame = saved.game as any;
+      if (!savedGame || !savedGame.phase || savedGame.phase === 'waiting') continue;
+      // Only restore if DB version is newer than what we already have in memory
+      if (saved.stateVersion <= room.stateVersion) continue;
+      room.game = savedGame;
+      room.stateVersion = saved.stateVersion;
+      console.log(`[rooms] Restored active game for ${rid} (phase=${savedGame.phase}, v${saved.stateVersion})`);
+      // Schedule turn timeout if a hand is in progress
+      if (savedGame.phase !== 'showdown') {
+        scheduleActionTimeout(rid);
+      }
+    }
+  } catch (e) {
+    console.error('[rooms] game state hydration failed:', e);
+  }
 }
 
 // ─── Lookup ───────────────────────────────────────────────────────────────────
@@ -316,7 +341,15 @@ export function getAgentRoom(agentId: string): string | null {
 
 export function bumpVersion(roomId: string): void {
   const room = rooms.get(roomId);
-  if (room) room.stateVersion = (room.stateVersion ?? 0) + 1;
+  if (!room) return;
+  room.stateVersion = (room.stateVersion ?? 0) + 1;
+  // Persist game state after every action so cross-instance polls and
+  // cold-start restarts always have the latest hand state.
+  if (room.game) {
+    saveRoomState(roomId, room.game, room.stateVersion);
+  } else {
+    deleteRoomState(roomId);
+  }
 }
 
 export function getRoomStateVersion(roomId: string): number {

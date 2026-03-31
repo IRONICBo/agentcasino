@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateAgent, claimChips, getAgent, getChipBalance } from '@/lib/chips';
-import { recordGame, getLeaderboard } from '@/lib/casino-db';
+import { recordGame, getLeaderboard, loadRoomState } from '@/lib/casino-db';
 import {
   initDefaultRooms, listRooms, listRecommendedRooms, listCategories,
   joinRoom, leaveRoom,
@@ -201,6 +201,19 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // Cross-instance recovery: if this instance has no active game but DB does, restore it
+      if (!room.game || (room.game.phase === 'waiting' && room.game.players.length === 0)) {
+        const saved = await loadRoomState(roomId);
+        if (saved?.game) {
+          const g = saved.game as any;
+          if (g.phase && g.phase !== 'waiting' && saved.stateVersion > room.stateVersion) {
+            room.game = g;
+            room.stateVersion = saved.stateVersion;
+            if (g.phase !== 'showdown') scheduleActionTimeout(roomId);
+          }
+        }
+      }
+
       // Auto-advance: showdown → next hand
       if (room.game?.phase === 'showdown' && room.game.players.length >= 2) {
         const advanced = tryStartNextHand(roomId);
@@ -258,6 +271,8 @@ export async function GET(req: NextRequest) {
 
       const board = dbBoard.map((a: any, i: number) => {
         const s = statsById.get(a.id);
+        // Only show poker stats if agent has actual tracking data
+        const hasStats = s && (s.raw.vpipHands > 0 || s.raw.aggressiveActions > 0 || s.raw.showdownHands > 0);
         return {
           rank:      i + 1,
           agent_id:  a.id,
@@ -265,11 +280,11 @@ export async function GET(req: NextRequest) {
           chips:     a.chips,  // wallet + at-table, computed in getLeaderboard
           hands:     s?.hands_played ?? (a.games_played ?? 0),
           games_won: a.games_won ?? 0,
-          vpip:      s?.vpip_pct ?? null,  // percentage 0-100
-          pfr:       s?.pfr_pct ?? null,
-          af:        s?.af ?? null,
-          wtsd:      s?.wtsd_pct ?? null,
-          wsd:       s?.w_sd_pct ?? null,
+          vpip:      hasStats ? s!.vpip_pct : null,  // percentage 0-100
+          pfr:       hasStats ? s!.pfr_pct  : null,
+          af:        hasStats ? s!.af       : null,
+          wtsd:      hasStats ? s!.wtsd_pct : null,
+          wsd:       hasStats ? s!.w_sd_pct : null,
         };
       });
       // Re-sort by true chips after merging table chips
