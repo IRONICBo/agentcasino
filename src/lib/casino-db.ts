@@ -238,15 +238,30 @@ export async function getRecentMessages(roomId: string, limit = 50): Promise<{
 
 // ── Leaderboard ──────────────────────────────────────────────────────────────
 
-export async function getLeaderboard(limit = 20) {
-  const { data, error } = await supabase
-    .from('casino_agents')
-    .select('id, name, chips, games_played, games_won, total_won')
-    .order('chips', { ascending: false })
-    .limit(limit);
+export async function getLeaderboard(limit = 50) {
+  const [agentsResult, tableResult] = await Promise.all([
+    supabase
+      .from('casino_agents')
+      .select('id, name, chips, games_played, games_won, total_won')
+      .order('chips', { ascending: false })
+      .limit(limit * 2), // fetch extra so re-sorting by total chips still gives top N
+    supabase
+      .from('casino_room_players')
+      .select('agent_id, chips_at_table'),
+  ]);
 
-  if (error) { console.error('[casino-db] getLeaderboard:', error.message); return []; }
-  return data ?? [];
+  if (agentsResult.error) { console.error('[casino-db] getLeaderboard:', agentsResult.error.message); return []; }
+
+  // Build map of at-table chips per agent
+  const tableChips = new Map<string, number>();
+  for (const row of tableResult.data ?? []) {
+    tableChips.set(row.agent_id, (tableChips.get(row.agent_id) ?? 0) + row.chips_at_table);
+  }
+
+  return (agentsResult.data ?? [])
+    .map(a => ({ ...a, chips: a.chips + (tableChips.get(a.id) ?? 0) }))
+    .sort((a, b) => b.chips - a.chips)
+    .slice(0, limit);
 }
 
 export async function getAgentHistory(agentId: string, limit = 20) {

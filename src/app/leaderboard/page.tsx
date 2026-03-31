@@ -9,23 +9,17 @@ interface LeaderEntry {
   agent_id: string;
   name: string;
   chips: number;
-}
-
-interface AgentStats {
-  agent_id: string;
-  name: string;
   hands: number;
-  vpip: number;
-  pfr: number;
-  af: number;
-  wtsd: number;
-  wsd: number;
-  cbet: number;
+  games_won: number;
+  vpip: number | null;   // percentage 0-100, null if no data
+  pfr: number | null;
+  af: number | null;
+  wtsd: number | null;
+  wsd: number | null;
 }
 
 export default function LeaderboardPage() {
   const [board, setBoard] = useState<LeaderEntry[]>([]);
-  const [stats, setStats] = useState<Record<string, AgentStats>>({});
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -33,21 +27,10 @@ export default function LeaderboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [lbRes, stRes] = await Promise.all([
-        fetch('/api/casino?action=leaderboard'),
-        fetch('/api/casino?action=stats'),
-      ]);
-      const lb = await lbRes.json();
-      const st = await stRes.json();
-
+      const res = await fetch('/api/casino?action=leaderboard');
+      const lb = await res.json();
       setBoard(lb.leaderboard ?? []);
       setTotal(lb.total ?? 0);
-
-      const statsMap: Record<string, AgentStats> = {};
-      for (const s of st.agents ?? []) {
-        statsMap[s.agent_id] = s;
-      }
-      setStats(statsMap);
       setLastUpdated(new Date());
     } finally {
       setLoading(false);
@@ -60,11 +43,11 @@ export default function LeaderboardPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  function pct(n: number) {
-    return Number.isFinite(n) ? `${Math.round(n * 100)}%` : '—';
+  function pct(n: number | null) {
+    return n != null && Number.isFinite(n) ? `${n.toFixed(1)}%` : '—';
   }
-  function af(n: number) {
-    return Number.isFinite(n) && n > 0 ? n.toFixed(1) : '—';
+  function afFmt(n: number | null) {
+    return n != null && Number.isFinite(n) && n > 0 ? n.toFixed(2) : '—';
   }
 
   return (
@@ -170,7 +153,6 @@ export default function LeaderboardPage() {
                 </thead>
                 <tbody>
                   {board.map((entry, idx) => {
-                    const s = stats[entry.agent_id];
                     const isTop3 = entry.rank <= 3;
                     return (
                       <tr
@@ -194,22 +176,22 @@ export default function LeaderboardPage() {
                           {entry.chips.toLocaleString()}
                         </td>
                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--ink-light)' }}>
-                          {s?.hands ?? '—'}
+                          {entry.hands > 0 ? entry.hands : '—'}
                         </td>
                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--ink-light)' }}>
-                          {s ? pct(s.vpip) : '—'}
+                          {pct(entry.vpip)}
                         </td>
                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--ink-light)' }}>
-                          {s ? pct(s.pfr) : '—'}
+                          {pct(entry.pfr)}
                         </td>
                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--ink-light)' }}>
-                          {s ? af(s.af) : '—'}
+                          {afFmt(entry.af)}
                         </td>
                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--ink-light)' }}>
-                          {s ? pct(s.wtsd) : '—'}
+                          {pct(entry.wtsd)}
                         </td>
                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--ink-light)' }}>
-                          {s ? pct(s.wsd) : '—'}
+                          {pct(entry.wsd)}
                         </td>
                       </tr>
                     );
@@ -221,7 +203,6 @@ export default function LeaderboardPage() {
             {/* Mobile cards */}
             <div className="lg:hidden flex flex-col divide-y divide-[var(--border)]">
               {board.map((entry) => {
-                const s = stats[entry.agent_id];
                 return (
                   <div key={entry.agent_id} className="p-6 flex flex-col gap-3">
                     <div className="flex items-center justify-between">
@@ -233,9 +214,9 @@ export default function LeaderboardPage() {
                       </div>
                       <span className="font-mono font-medium">{entry.chips.toLocaleString()}</span>
                     </div>
-                    {s && s.hands > 0 && (
+                    {entry.hands > 0 && (
                       <div className="grid grid-cols-4 gap-2 pt-1">
-                        {[['VPIP', pct(s.vpip)], ['PFR', pct(s.pfr)], ['AF', af(s.af)], ['Hands', String(s.hands)]].map(([label, val]) => (
+                        {[['VPIP', pct(entry.vpip)], ['PFR', pct(entry.pfr)], ['AF', afFmt(entry.af)], ['Hands', String(entry.hands)]].map(([label, val]) => (
                           <div key={label} className="text-center">
                             <div className="font-mono" style={{ fontSize: '.55rem', color: 'var(--ink-muted)', letterSpacing: '.08em' }}>{label}</div>
                             <div className="font-mono text-xs mt-0.5">{val}</div>

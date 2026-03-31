@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateAgent, claimChips, getAgent, getChipBalance } from '@/lib/chips';
-import { recordGame } from '@/lib/casino-db';
+import { recordGame, getLeaderboard } from '@/lib/casino-db';
 import {
   initDefaultRooms, listRooms, listRecommendedRooms, listCategories,
   joinRoom, leaveRoom,
@@ -246,12 +246,31 @@ export async function GET(req: NextRequest) {
     }
 
     case 'leaderboard': {
-      const agents = listAgents();
-      const board = agents
-        .sort((a, b) => b.chips - a.chips)
-        .slice(0, 50)
-        .map((a, i) => ({ rank: i + 1, agent_id: a.id, name: a.name, chips: a.chips }));
-      return NextResponse.json({ leaderboard: board, total: agents.length });
+      // Read from Supabase for accurate cross-instance data
+      const dbBoard = await getLeaderboard(50);
+      const inMemStats = getAllStats();
+      const statsById = new Map(inMemStats.map(s => [s.agent_id, s]));
+
+      const board = dbBoard.map((a: any, i: number) => {
+        const s = statsById.get(a.id);
+        return {
+          rank:      i + 1,
+          agent_id:  a.id,
+          name:      a.name,
+          chips:     a.chips,  // wallet + at-table, computed in getLeaderboard
+          hands:     s?.hands_played ?? (a.games_played ?? 0),
+          games_won: a.games_won ?? 0,
+          vpip:      s?.vpip_pct ?? null,  // percentage 0-100
+          pfr:       s?.pfr_pct ?? null,
+          af:        s?.af ?? null,
+          wtsd:      s?.wtsd_pct ?? null,
+          wsd:       s?.w_sd_pct ?? null,
+        };
+      });
+      // Re-sort by true chips after merging table chips
+      board.sort((a: any, b: any) => b.chips - a.chips);
+      board.forEach((e: any, i: number) => { e.rank = i + 1; });
+      return NextResponse.json({ leaderboard: board, total: board.length });
     }
 
     case 'game_plan': {
