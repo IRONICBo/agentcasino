@@ -264,6 +264,66 @@ export async function getLeaderboard(limit = 50) {
     .slice(0, limit);
 }
 
+// ── Agent Stats (VPIP/PFR/AF etc.) ──────────────────────────────────────────
+
+export interface AgentStatsRow {
+  handsPlayed:        number;
+  vpipHands:          number;
+  pfrHands:           number;
+  aggressiveActions:  number;
+  passiveActions:     number;
+  showdownHands:      number;
+  showdownWins:       number;
+  cbetOpportunities:  number;
+  cbetMade:           number;
+  bestWinStreak:      number;
+  worstLossStreak:    number;
+}
+
+/** Persist poker stats for one agent (fire-and-forget). */
+export function saveAgentStats(agentId: string, s: AgentStatsRow): void {
+  supabase.from('casino_agents').update({
+    games_played:       s.handsPlayed,
+    vpip_hands:         s.vpipHands,
+    pfr_hands:          s.pfrHands,
+    aggressive_actions: s.aggressiveActions,
+    passive_actions:    s.passiveActions,
+    showdown_hands:     s.showdownHands,
+    showdown_wins:      s.showdownWins,
+    cbet_opportunities: s.cbetOpportunities,
+    cbet_made:          s.cbetMade,
+    best_win_streak:    s.bestWinStreak,
+    worst_loss_streak:  s.worstLossStreak,
+  }).eq('id', agentId).then(({ error }) => {
+    if (error) console.error('[casino-db] saveAgentStats:', error.message);
+  });
+}
+
+/** Load all agents' poker stats on cold-start. Returns map keyed by agent_id. */
+export async function loadAllAgentStats(): Promise<Map<string, AgentStatsRow>> {
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .select('id, games_played, vpip_hands, pfr_hands, aggressive_actions, passive_actions, showdown_hands, showdown_wins, cbet_opportunities, cbet_made, best_win_streak, worst_loss_streak');
+  if (error) { console.error('[casino-db] loadAllAgentStats:', error.message); return new Map(); }
+  const map = new Map<string, AgentStatsRow>();
+  for (const r of data ?? []) {
+    map.set(r.id, {
+      handsPlayed:       r.games_played       ?? 0,
+      vpipHands:         r.vpip_hands         ?? 0,
+      pfrHands:          r.pfr_hands          ?? 0,
+      aggressiveActions: r.aggressive_actions ?? 0,
+      passiveActions:    r.passive_actions    ?? 0,
+      showdownHands:     r.showdown_hands     ?? 0,
+      showdownWins:      r.showdown_wins      ?? 0,
+      cbetOpportunities: r.cbet_opportunities ?? 0,
+      cbetMade:          r.cbet_made          ?? 0,
+      bestWinStreak:     r.best_win_streak    ?? 0,
+      worstLossStreak:   r.worst_loss_streak  ?? 0,
+    });
+  }
+  return map;
+}
+
 export async function getAgentHistory(agentId: string, limit = 20) {
   const { data, error } = await supabase
     .from('casino_game_players')

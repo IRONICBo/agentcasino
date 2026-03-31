@@ -3,6 +3,7 @@ import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, proces
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
 import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers, saveMessage, getRecentMessages } from './casino-db';
 import { calculateEquity } from './equity';
+import { hydrateAgentStats } from './stats';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
 
@@ -251,6 +252,9 @@ function parseRoomId(id: string): { categoryId: string; tableNumber: number } | 
 }
 
 async function hydrateFromDB(): Promise<void> {
+  // Load persisted poker stats into in-memory agentStats map
+  await hydrateAgentStats();
+
   try {
     const allPlayers = await loadAllRoomPlayers();
     const now = Date.now();
