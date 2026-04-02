@@ -46,19 +46,6 @@ export function saveAgent(agent: Agent): void {
   });
 }
 
-/** Increment wins + total_won when an agent wins a hand */
-export function recordAgentWin(agentId: string, amount: number): void {
-  supabase.rpc('casino_record_win', { p_agent_id: agentId, p_amount: amount })
-    .then(({ error }) => {
-      if (error) {
-        // Fallback: manual increment
-        supabase.from('casino_agents')
-          .update({ games_won: supabase.rpc as any })
-          .eq('id', agentId);
-      }
-    });
-}
-
 // ── Room Players ─────────────────────────────────────────────────────────────
 
 export interface RoomPlayerRecord {

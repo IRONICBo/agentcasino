@@ -17,7 +17,7 @@
 
 import { createPublicKey, verify as cryptoVerify } from 'crypto';
 import { Agent } from './types';
-import { getOrCreateAgent, getAgent } from './chips';
+import { getOrCreateAgent, getAgent, addChips } from './chips';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -311,7 +311,7 @@ export async function verifyMimiLogin(payload: MimiLoginPayload): Promise<LoginR
 
   let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
   if (agent.chips === 0 && agent.createdAt >= now - 5000) {
-    agent.chips += 500_000;
+    addChips(agent.id, 500_000); // persists to DB immediately
     welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
   }
 
@@ -367,7 +367,7 @@ export async function simpleLogin(agentId: string, name?: string): Promise<Login
     const now = Date.now();
     let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
     if (agent.chips === 0 && agent.createdAt >= now - 5000) {
-      agent.chips += 500_000;
+      addChips(agent.id, 500_000); // persists to DB immediately
       welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
     }
 

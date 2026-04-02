@@ -215,10 +215,13 @@ export async function GET(req: NextRequest) {
       if (!room.game || (room.game.phase === 'waiting' && room.game.players.length === 0) || pollTimedOutStale) {
         const saved = await loadRoomState(roomId);
         if (saved?.game && saved.stateVersion > room.stateVersion) {
-          const g = saved.game as any;
+          const { _turnDeadlineMs, ...g } = saved.game as any;
           if (g.phase && g.phase !== 'waiting') {
             room.game = g;
             room.stateVersion = saved.stateVersion;
+            if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
+              room.turnDeadlineMs = _turnDeadlineMs;
+            }
             if (g.phase !== 'showdown') scheduleActionTimeout(roomId);
           }
         }

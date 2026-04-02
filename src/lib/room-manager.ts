@@ -90,7 +90,6 @@ interface ExtendedRoom extends Room {
   tableNumber: number;
   stateVersion: number;
   turnDeadlineMs: number | null;
-  chatLog: ChatMsg[];
 }
 
 const globalAny = globalThis as any;
@@ -158,7 +157,6 @@ function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom
     createdAt: Date.now(),
     stateVersion: 0,
     turnDeadlineMs: null,
-    chatLog: [],
   };
   rooms.set(room.id, room);
   return room;
@@ -310,8 +308,14 @@ async function hydrateFromDB(): Promise<void> {
       if (!savedGame || !savedGame.phase || savedGame.phase === 'waiting') continue;
       // Only restore if DB version is newer than what we already have in memory
       if (saved.stateVersion <= room.stateVersion) continue;
-      room.game = savedGame;
+      // Strip internal metadata field before assigning to room.game
+      const { _turnDeadlineMs, ...gameState } = savedGame;
+      room.game = gameState;
       room.stateVersion = saved.stateVersion;
+      // Restore turn deadline so cross-instance countdown is accurate
+      if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
+        room.turnDeadlineMs = _turnDeadlineMs;
+      }
       console.log(`[rooms] Restored active game for ${rid} (phase=${savedGame.phase}, v${saved.stateVersion})`);
       // Schedule turn timeout if a hand is in progress
       if (savedGame.phase !== 'showdown') {
@@ -345,8 +349,12 @@ export function bumpVersion(roomId: string): void {
   room.stateVersion = (room.stateVersion ?? 0) + 1;
   // Persist game state after every action so cross-instance polls and
   // cold-start restarts always have the latest hand state.
+  // Include turnDeadlineMs so other instances can show the same countdown.
   if (room.game) {
-    saveRoomState(roomId, room.game, room.stateVersion);
+    const snapshot = room.turnDeadlineMs
+      ? { ...room.game, _turnDeadlineMs: room.turnDeadlineMs }
+      : room.game;
+    saveRoomState(roomId, snapshot, room.stateVersion);
   } else {
     deleteRoomState(roomId);
   }
