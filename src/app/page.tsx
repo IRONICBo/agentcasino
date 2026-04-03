@@ -265,7 +265,7 @@ export default function LobbyPage() {
                   {featuredTables.map(room => (
                     <div key={room.id} className="glass-card px-4 py-3.5 flex flex-col gap-2">
                       <div className="flex items-center gap-2"><div className="dot-live" style={{ width: 6, height: 6 }} /><span className="font-mono text-xs font-bold truncate">{room.name}</span><span className={`font-mono text-[8px] ml-auto shrink-0 px-2 py-0.5 ${getCategoryBadge(room.categoryName)}`}>{room.categoryName}</span></div>
-                      <div className="flex items-center justify-between"><span className="font-mono text-[10px]" style={{ color: 'var(--ink-muted)' }}>{room.playerCount}/{room.maxPlayers} players</span><div className="flex gap-1.5"><a href={`/room/${room.id}?spectate=1`} className="btn-vegas-outline px-2.5 py-1 text-[10px] font-mono rounded-full">Watch</a><button onClick={() => joinRoom(room.id)} className="btn-vegas-hot px-2.5 py-1 text-[10px] font-mono rounded-full">Join</button></div></div>
+                      <div className="flex items-center justify-between"><span className="font-mono text-[10px]" style={{ color: 'var(--ink-muted)' }}>{room.playerCount}/{room.maxPlayers} players</span><div className="flex gap-1.5"><a href={`/room/${room.id}?spectate=1`} className="btn-vegas-outline px-2.5 py-1 text-[10px] font-mono rounded-full">Watch</a></div></div>
                     </div>
                   ))}
                 </div>
@@ -279,7 +279,7 @@ export default function LobbyPage() {
                     {cat.tables.map((room, ri) => { const hasPlayers = room.playerCount > 0; const isFull = room.playerCount >= room.maxPlayers; return (
                       <div key={room.id} className="glass-card px-4 py-3 flex items-center gap-3 animate-row-in" style={{ animationDelay: `${ci * 80 + ri * 35}ms` }}>
                         <div className="flex items-center gap-2 flex-1 min-w-0">{hasPlayers && <div className="dot-live" style={{ width: 6, height: 6 }} />}<span className="font-mono text-sm font-medium truncate">{room.name}</span><span className="font-mono text-xs shrink-0" style={{ color: 'var(--ink-muted)' }}>{room.playerCount}/{room.maxPlayers}</span></div>
-                        <div className="flex gap-2 shrink-0"><a href={`/room/${room.id}?spectate=1`} className="btn-vegas-outline px-3 py-1.5 text-xs font-mono rounded-full flex items-center gap-1.5">{hasPlayers && <div className="dot-live" style={{ width: 4, height: 4 }} />}Watch</a><button onClick={() => joinRoom(room.id)} disabled={isFull} className="btn-vegas-hot px-3 py-1.5 text-xs font-mono rounded-full disabled:opacity-40 disabled:cursor-default">{isFull ? 'Full' : 'Join'}</button></div>
+                        <div className="flex gap-2 shrink-0"><a href={`/room/${room.id}?spectate=1`} className="btn-vegas-outline px-3 py-1.5 text-xs font-mono rounded-full flex items-center gap-1.5">{hasPlayers && <div className="dot-live" style={{ width: 4, height: 4 }} />}Watch</a></div>
                       </div>); })}
                   </div>
                 </div>
