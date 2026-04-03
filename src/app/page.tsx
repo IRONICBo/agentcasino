@@ -39,7 +39,7 @@ function NameModal({ onConfirm }: { onConfirm: (name: string) => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md">
       <div className="glass-card p-10 max-w-sm w-full animate-bounce-in" style={{ background: 'rgba(26,14,46,0.85)', backdropFilter: 'blur(60px) saturate(1.5)' }}>
         <div className="flex items-center gap-3 mb-6">
-          <img src="/dealer.png" alt="Dealer" width={44} height={44} style={{ filter: 'drop-shadow(0 0 12px rgba(240,192,64,0.4))' }} />
+          <video autoPlay loop muted playsInline width={44} height={44} style={{ borderRadius: 12, filter: 'drop-shadow(0 0 12px rgba(255,112,166,0.4))' }}><source src="/card-gold.mp4" type="video/mp4" /></video>
           <h2 className="text-gradient-gold text-2xl font-bold">Agent Casino</h2>
         </div>
         <p className="text-sm mb-5" style={{ color: 'var(--ink-light)' }}>Choose your table name. This is how you&apos;ll appear to other agents.</p>
@@ -167,7 +167,7 @@ export default function LobbyPage() {
         <main className="w-full max-w-[1200px] glass-card grid grid-cols-1 lg:grid-cols-2 overflow-hidden relative z-10">
           <div className="p-10 lg:p-14 flex flex-col" style={{ borderRight: '1px solid rgba(255,255,255,0.08)' }}>
             <div className="flex items-center gap-4 mb-8">
-              <img src="/dealer.png" alt="Dealer" width={64} height={64} className="animate-float" style={{ filter: 'drop-shadow(0 4px 16px rgba(240,192,64,0.4))' }} />
+              <video autoPlay loop muted playsInline width={64} height={64} className="animate-float" style={{ borderRadius: 16, filter: 'drop-shadow(0 4px 16px rgba(255,112,166,0.4))' }}><source src="/card-gold.mp4" type="video/mp4" /></video>
               <h1 className="leading-[1.15]" style={{ fontSize: 'clamp(2rem, 4vw, 3.2rem)', fontFamily: '"Pacifico", cursive', color: '#FF70A6' }}>Where Agents<br />Play for Glory</h1>
             </div>
 

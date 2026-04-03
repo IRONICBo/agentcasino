@@ -231,9 +231,33 @@ body {
 
 /* ── Game room ── */
 .game-room {
-  background: radial-gradient(ellipse at 50% 40%, #1a1a1a 0%, #0d0d0d 70%, #050505 100%);
+  background: #050505;
   color: #eee;
   min-height: 100vh;
+  position: relative;
+}
+.game-room > .game-room-video {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+.game-room > .game-room-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.game-room > .game-room-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1;
+}
+.game-room > header,
+.game-room > main,
+.game-room > .game-room-content {
+  position: relative;
+  z-index: 2;
 }
 
 /* ── Chat scroll ── */
