@@ -55,11 +55,11 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
-          href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=IBM+Plex+Mono:wght@400;500;600;700&family=Nunito:wght@500;600;700;800;900&family=Fredoka:wght@400;500;600;700&family=Pacifico&display=swap"
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full bg-[#F6F5F0] text-[#1A1A1A]">
+      <body className="min-h-full bg-[#1a0e2e] text-[#111]">
         {children}
       </body>
     </html>

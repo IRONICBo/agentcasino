@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Pixel-art poker table for the lobby — editorial black & white style.
+ * Pixel-art poker table for the lobby — pink pop-art style.
  * Shows live game state when active, empty table when idle.
  */
 
@@ -17,8 +17,7 @@ interface PixelPokerTableProps {
 function seatPositions(count: number): [number, number][] {
   const positions: [number, number][] = [];
   for (let i = 0; i < count; i++) {
-    // Distribute across a 180° arc from left to right (bottom half)
-    const angle = Math.PI * (i / (count - 1));  // 0 to PI
+    const angle = Math.PI * (i / (count - 1));
     const x = 50 - 42 * Math.cos(angle);
     const y = 50 + 38 * Math.sin(angle);
     positions.push([y, x]);
@@ -31,6 +30,19 @@ const fmt = (n: number) =>
   : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K`
   : String(n);
 
+// Pink palette
+const P = {
+  bg: '#FFF0F5',
+  surface: '#FFE0EB',
+  border: '#FF70A6',
+  borderLight: '#FFB0CC',
+  text: '#CC2070',
+  textLight: '#E880A8',
+  card: '#FF70A6',
+  cardInner: '#FFB0CC',
+  white: '#fff',
+};
+
 export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTableProps) {
   const isActive = gameState && gameState.phase !== 'waiting' && gameState.players.length > 0;
   const maxSeats = 6;
@@ -39,28 +51,36 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
   return (
     <a
       href={isActive && roomId ? `/room/${roomId}?spectate=1` : undefined}
-      className="block border-2 border-[var(--ink)] bg-white transition-shadow hover:shadow-[4px_4px_0_var(--ink)]"
-      style={{ textDecoration: 'none', color: 'inherit', boxShadow: '3px 3px 0 var(--ink)', cursor: isActive ? 'pointer' : 'default' }}
+      className="block transition-shadow"
+      style={{
+        textDecoration: 'none', color: 'inherit',
+        border: `2px solid ${P.border}`,
+        borderRadius: 16,
+        background: P.white,
+        boxShadow: `3px 3px 0 ${P.border}`,
+        cursor: isActive ? 'pointer' : 'default',
+        overflow: 'hidden',
+      }}
     >
       {/* Header bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b-2 border-[var(--ink)]" style={{ background: 'var(--bg-page)' }}>
+      <div className="flex items-center justify-between px-3 py-1.5" style={{ background: P.surface, borderBottom: `2px solid ${P.border}` }}>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2" style={{ background: isActive ? '#10b981' : 'var(--ink-light)' }} />
-          <span className="font-mono text-[9px] tracking-widest uppercase font-bold">
+          <div className="w-2 h-2 rounded-full" style={{ background: isActive ? '#22c55e' : P.borderLight }} />
+          <span className="font-mono text-[9px] tracking-widest uppercase font-bold" style={{ color: P.text }}>
             {isActive ? 'LIVE' : 'NO ACTIVE GAMES'}
           </span>
         </div>
         {isActive && roomName && (
-          <span className="font-mono text-[9px] uppercase" style={{ color: 'var(--ink-light)' }}>{roomName}</span>
+          <span className="font-mono text-[9px] uppercase" style={{ color: P.textLight }}>{roomName}</span>
         )}
       </div>
 
       {/* Table area */}
-      <div style={{ position: 'relative', padding: '12px' }}>
+      <div style={{ position: 'relative', padding: '12px', background: P.bg }}>
         {/* Pixel grid bg */}
         <div style={{
           position: 'absolute', inset: 0,
-          backgroundImage: 'linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px)',
+          backgroundImage: `linear-gradient(${P.borderLight}22 1px, transparent 1px), linear-gradient(90deg, ${P.borderLight}22 1px, transparent 1px)`,
           backgroundSize: '8px 8px',
         }} />
 
@@ -69,15 +89,15 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
           <div style={{
             position: 'absolute',
             top: '18%', left: '12%', right: '12%', bottom: '18%',
-            border: '2px solid var(--ink)',
+            border: `2px solid ${P.border}`,
             borderRadius: '50%',
-            background: 'var(--bg-page)',
-            boxShadow: '4px 4px 0 var(--ink)',
+            background: P.surface,
+            boxShadow: `4px 4px 0 ${P.borderLight}`,
           }}>
             {/* Inner border */}
             <div style={{
               position: 'absolute', inset: 6,
-              border: '1px dashed var(--border)',
+              border: `1px dashed ${P.borderLight}`,
               borderRadius: '50%',
             }} />
 
@@ -90,19 +110,17 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
             }}>
               {isActive ? (
                 <>
-                  {/* Phase + Pot */}
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-[10px] font-bold uppercase border border-[var(--ink)] px-2 py-0.5" style={{ boxShadow: '1px 1px 0 var(--ink)' }}>
+                    <span className="font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded-full" style={{ background: P.card, color: P.white }}>
                       {gameState.phase === 'preflop' ? 'PRE-FLOP' : gameState.phase.toUpperCase()}
                     </span>
                     {gameState.pot > 0 && (
-                      <span className="font-mono text-sm font-black">
+                      <span className="font-mono text-sm font-black" style={{ color: P.text }}>
                         POT {fmt(gameState.pot)}
                       </span>
                     )}
                   </div>
 
-                  {/* Community cards — pixel style */}
                   <div className="flex items-center justify-center gap-1">
                     {gameState.communityCards.map((card, i) => {
                       const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
@@ -110,38 +128,40 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                       return (
                         <div key={i} style={{
                           width: 32, height: 44,
-                          border: '2px solid var(--ink)',
+                          border: `2px solid ${P.border}`,
+                          borderRadius: 6,
                           background: '#fff',
-                          boxShadow: '2px 2px 0 var(--ink)',
+                          boxShadow: `2px 2px 0 ${P.borderLight}`,
                           display: 'flex', flexDirection: 'column',
                           alignItems: 'center', justifyContent: 'center',
                           fontFamily: 'monospace', gap: 0,
                         }}>
-                          <span style={{ fontSize: 10, fontWeight: 900, color: isRed ? '#c0392b' : 'var(--ink)', lineHeight: 1 }}>{card.rank}</span>
-                          <span style={{ fontSize: 9, color: isRed ? '#c0392b' : 'var(--ink)', lineHeight: 1 }}>{sym}</span>
+                          <span style={{ fontSize: 10, fontWeight: 900, color: isRed ? '#FF70A6' : P.text, lineHeight: 1 }}>{card.rank}</span>
+                          <span style={{ fontSize: 9, color: isRed ? '#FF70A6' : P.text, lineHeight: 1 }}>{sym}</span>
                         </div>
                       );
                     })}
                     {Array.from({ length: 5 - gameState.communityCards.length }).map((_, i) => (
                       <div key={`e${i}`} style={{
                         width: 32, height: 44,
-                        border: '2px solid var(--ink)',
-                        background: 'var(--ink)',
-                        boxShadow: '2px 2px 0 var(--border)',
+                        border: `2px solid ${P.border}`,
+                        borderRadius: 6,
+                        background: P.card,
+                        boxShadow: `2px 2px 0 ${P.borderLight}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
                         <div style={{
                           width: 20, height: 30,
-                          border: '1px solid var(--border)',
+                          border: `1px solid ${P.borderLight}`,
+                          borderRadius: 4,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontFamily: 'monospace', fontSize: 10, color: 'var(--border)',
+                          fontFamily: 'monospace', fontSize: 10, color: P.borderLight,
                           userSelect: 'none',
                         }}>♠</div>
                       </div>
                     ))}
                   </div>
 
-                  {/* Last action ticker */}
                   {gameState.lastAction && (() => {
                     const a = gameState.lastAction;
                     const p = gameState.players.find(pl => pl.agentId === a.agentId);
@@ -149,7 +169,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                     const label = a.action.toUpperCase().replace('_', ' ');
                     const text = a.amount ? `${name} ${label} ${fmt(a.amount)}` : `${name} ${label}`;
                     return (
-                      <span className="font-mono text-[9px] font-bold border border-[var(--ink)] px-2 py-0.5 bg-[var(--bg-page)]">
+                      <span className="font-mono text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: P.white, color: P.text, border: `1px solid ${P.border}` }}>
                         {text}
                       </span>
                     );
@@ -157,28 +177,28 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                 </>
               ) : (
                 <>
-                  {/* Suits watermark */}
                   <div style={{
                     fontFamily: 'monospace', fontSize: 24,
-                    color: 'var(--border)', letterSpacing: '0.3em', userSelect: 'none',
+                    color: P.borderLight, letterSpacing: '0.3em', userSelect: 'none',
                   }}>
                     ♠ ♥ ♦ ♣
                   </div>
-                  {/* 5 face-down card slots */}
                   <div style={{ display: 'flex', gap: 4 }}>
                     {Array.from({ length: 5 }).map((_, i) => (
                       <div key={i} style={{
                         width: 28, height: 38,
-                        border: '2px solid var(--ink)',
-                        background: 'var(--ink)',
-                        boxShadow: '2px 2px 0 var(--border)',
+                        border: `2px solid ${P.border}`,
+                        borderRadius: 6,
+                        background: P.card,
+                        boxShadow: `2px 2px 0 ${P.borderLight}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
                         <div style={{
                           width: 18, height: 26,
-                          border: '1px solid var(--border)',
+                          border: `1px solid ${P.borderLight}`,
+                          borderRadius: 4,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontFamily: 'monospace', fontSize: 8, color: 'var(--border)',
+                          fontFamily: 'monospace', fontSize: 8, color: P.borderLight,
                           userSelect: 'none',
                         }}>♠</div>
                       </div>
@@ -187,7 +207,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 9,
                     letterSpacing: '0.15em', textTransform: 'uppercase',
-                    color: 'var(--ink-light)',
+                    color: P.textLight,
                   }}>
                     Waiting for agents...
                   </div>
@@ -198,9 +218,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
 
           {/* Seats */}
           {isActive ? (
-            /* Player seats from game state */
             gameState.players.map((player) => {
-              // Map seat index to ellipse positions
               const seats = seatPositions(Math.max(gameState.players.length, maxSeats));
               const [top, left] = seats[player.seatIndex] ?? seats[0];
               const isCurrent = gameState.players[gameState.currentPlayerIndex]?.agentId === player.agentId;
@@ -212,10 +230,11 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                   zIndex: 2,
                 }}>
                   <div style={{
-                    border: isCurrent ? '2px solid var(--ink)' : '2px solid var(--ink)',
-                    background: isCurrent ? 'var(--ink)' : 'var(--bg-page)',
-                    color: isCurrent ? 'var(--bg-page)' : 'var(--ink)',
-                    boxShadow: '2px 2px 0 var(--ink)',
+                    border: `2px solid ${P.border}`,
+                    borderRadius: 10,
+                    background: isCurrent ? P.card : P.white,
+                    color: isCurrent ? P.white : P.text,
+                    boxShadow: `2px 2px 0 ${P.borderLight}`,
                     padding: '2px 6px',
                     opacity: player.hasFolded ? 0.35 : 1,
                     fontFamily: 'monospace',
@@ -236,7 +255,6 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
               );
             })
           ) : (
-            /* Empty seats — pixel-art chairs */
             emptySeats.map(([top, left], i) => (
               <div key={i} style={{
                 position: 'absolute',
@@ -246,12 +264,13 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
               }}>
                 <div style={{
                   width: 32, height: 32,
-                  border: '2px solid var(--ink)',
-                  background: 'var(--bg-page)',
-                  boxShadow: '2px 2px 0 var(--ink)',
+                  border: `2px solid ${P.border}`,
+                  borderRadius: 10,
+                  background: P.surface,
+                  boxShadow: `2px 2px 0 ${P.borderLight}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <span style={{ fontFamily: 'monospace', fontSize: 14, color: 'var(--border)', userSelect: 'none' }}>?</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: 14, color: P.borderLight, userSelect: 'none' }}>?</span>
                 </div>
               </div>
             ))
@@ -264,21 +283,22 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <div style={{
-                border: '2px solid var(--ink)',
+                border: `2px solid ${P.border}`,
+                borderRadius: 16,
                 background: '#fff',
-                boxShadow: '3px 3px 0 var(--ink)',
+                boxShadow: `3px 3px 0 ${P.borderLight}`,
                 padding: '8px 16px',
                 textAlign: 'center',
                 fontFamily: 'monospace',
               }}>
-                <div style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--ink-light)', marginBottom: 4 }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: P.textLight, marginBottom: 4 }}>
                   Winner
                 </div>
                 {gameState.winners.map((w, i) => (
                   <div key={i}>
-                    <div style={{ fontSize: 12, fontWeight: 900 }}>{w.name}</div>
-                    <div style={{ fontSize: 14, fontWeight: 900 }}>+{fmt(w.amount)}</div>
-                    <div style={{ fontSize: 8, color: 'var(--ink-light)' }}>{w.hand.description.toUpperCase()}</div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: P.text }}>{w.name}</div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: P.card }}>+{fmt(w.amount)}</div>
+                    <div style={{ fontSize: 8, color: P.textLight }}>{w.hand.description.toUpperCase()}</div>
                   </div>
                 ))}
               </div>

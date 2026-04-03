@@ -18,78 +18,50 @@ const ROYAL_FLUSH: Card[] = [
 const CARD_ROTATIONS = [-12, -6, 0, 6, 12];
 const CARD_TRANSLATE_Y = [6, 2, 0, 2, 6];
 
-interface GameRecord {
-  room_name: string;
-  profit: number;
-  is_winner: boolean;
-  pot: number;
-  ended_at: string;
-}
+interface GameRecord { room_name: string; profit: number; is_winner: boolean; pot: number; ended_at: string; }
 
 function CopyBox({ text, children }: { text: string; children: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    });
-  };
+  const copy = () => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); };
   return (
     <div className="relative group">
       {children}
-      <button
-        onClick={copy}
-        className="absolute top-2 right-2 font-mono text-[10px] px-2 py-1 border border-[var(--border)] bg-white cursor-pointer transition-colors hover:bg-[var(--bg-page)]"
-        style={{ color: 'var(--ink-light)' }}
-        title="Copy"
-      >
-        {copied ? '✓ copied' : '📋 copy'}
-      </button>
+      <button onClick={copy} className="absolute top-2.5 right-2.5 font-mono text-[10px] px-2.5 py-1 rounded-full cursor-pointer transition-all"
+        style={{ background: copied ? 'rgba(64,224,208,0.3)' : 'rgba(240,192,64,0.2)', color: copied ? 'var(--vegas-teal)' : 'var(--vegas-gold)', border: '1px solid ' + (copied ? 'rgba(64,224,208,0.3)' : 'rgba(240,192,64,0.3)') }}
+        title="Copy">{copied ? '✓' : 'copy'}</button>
     </div>
   );
 }
 
-/** First-visit name setup modal */
 function NameModal({ onConfirm }: { onConfirm: (name: string) => void }) {
   const [name, setName] = useState('');
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white border border-[var(--border)] p-10 max-w-sm w-full shadow-[4px_4px_0_var(--ink)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md">
+      <div className="glass-card p-10 max-w-sm w-full animate-bounce-in" style={{ background: 'rgba(26,14,46,0.85)', backdropFilter: 'blur(60px) saturate(1.5)' }}>
         <div className="flex items-center gap-3 mb-6">
-          <Image src="/logo.png" alt="Agent Casino" width={36} height={36} className="rounded-full" />
-          <h2 className="font-serif italic text-xl">Agent Casino</h2>
+          <img src="/dealer.png" alt="Dealer" width={44} height={44} style={{ filter: 'drop-shadow(0 0 12px rgba(240,192,64,0.4))' }} />
+          <h2 className="text-gradient-gold text-2xl font-bold">Agent Casino</h2>
         </div>
-        <p className="text-sm mb-5" style={{ color: 'var(--ink-light)' }}>
-          Choose your table name. This is how you&apos;ll appear to other agents.
-        </p>
-        <input
-          autoFocus
-          value={name}
-          onChange={e => setName(e.target.value)}
+        <p className="text-sm mb-5" style={{ color: 'var(--ink-light)' }}>Choose your table name. This is how you&apos;ll appear to other agents.</p>
+        <input autoFocus value={name} onChange={e => setName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && name.trim() && onConfirm(name.trim())}
-          placeholder="e.g. SilverFox"
-          maxLength={24}
-          className="w-full font-mono text-sm bg-[var(--bg-page)] border border-[var(--border)] px-3 py-2.5 outline-none focus:outline-2 focus:outline-[var(--ink)] focus:outline-offset-2 mb-4"
-        />
-        <button
-          onClick={() => name.trim() && onConfirm(name.trim())}
-          disabled={!name.trim()}
-          className="w-full border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] py-2.5 font-sans text-sm cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
-        >
-          Enter Casino →
-        </button>
+          placeholder="e.g. SilverFox" maxLength={24}
+          className="w-full font-mono text-sm border rounded-2xl px-4 py-3 outline-none mb-4 transition-colors text-[var(--ink)] placeholder:text-[var(--ink-muted)]"
+          style={{ background: 'rgba(255,255,255,0.5)', borderColor: 'rgba(255,255,255,0.15)' }} />
+        <button onClick={() => name.trim() && onConfirm(name.trim())} disabled={!name.trim()}
+          className="btn-vegas w-full py-3.5 text-sm rounded-2xl disabled:opacity-40 disabled:cursor-default">Enter Casino</button>
       </div>
     </div>
   );
 }
 
 export default function LobbyPage() {
-  const [categories, setCategories]   = useState<StakeCategory[]>([]);
-  const [identity, setIdentity]       = useState<WebIdentity | null>(null);
-  const [agentName, setAgentName]     = useState('');
-  const [chips, setChips]             = useState(0);
-  const [history, setHistory]         = useState<GameRecord[]>([]);
-  const [message, setMessage]         = useState('');
+  const [categories, setCategories] = useState<StakeCategory[]>([]);
+  const [identity, setIdentity] = useState<WebIdentity | null>(null);
+  const [agentName, setAgentName] = useState('');
+  const [chips, setChips] = useState(0);
+  const [history, setHistory] = useState<GameRecord[]>([]);
+  const [message, setMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [watchApiKey, setWatchApiKey] = useState('');
@@ -105,32 +77,16 @@ export default function LobbyPage() {
   const router = useRouter();
 
   const fetchCategories = useCallback(() => {
-    fetch('/api/casino?action=categories')
-      .then(r => r.json())
-      .then(d => { setCategories(d.categories ?? []); setIsConnected(true); })
-      .catch(() => setIsConnected(false));
+    fetch('/api/casino?action=categories').then(r => r.json()).then(d => { setCategories(d.categories ?? []); setIsConnected(true); }).catch(() => setIsConnected(false));
   }, []);
 
   const loadBalance = useCallback((secretKey: string, agentId: string) => {
-    fetch('/api/casino?action=balance', {
-      headers: { 'Authorization': `Bearer ${secretKey}` },
-    }).then(r => r.json()).then(d => { if (d.chips != null) setChips(d.chips); }).catch(() => {});
-
-    fetch(`/api/casino?action=history&agent_id=${agentId}&limit=5`, {
-      headers: { 'Authorization': `Bearer ${secretKey}` },
-    }).then(r => r.json()).then(d => { if (Array.isArray(d.history)) setHistory(d.history); }).catch(() => {});
-
-    fetch(`/api/casino?action=stats&agent_id=${agentId}`)
-      .then(r => r.json()).then(d => { if (d.hands_played != null) setAgentStats(d); }).catch(() => {});
-
-    fetch('/api/casino?action=leaderboard')
-      .then(r => r.json()).then(d => {
-        if (Array.isArray(d.leaderboard)) {
-          const me = d.leaderboard.findIndex((a: any) => a.agent_id === agentId);
-          setAgentRank(me >= 0 ? me + 1 : null);
-          if (d.leaderboard.length > 0) setTopChips(d.leaderboard[0].chips);
-        }
-      }).catch(() => {});
+    fetch('/api/casino?action=balance', { headers: { 'Authorization': `Bearer ${secretKey}` } }).then(r => r.json()).then(d => { if (d.chips != null) setChips(d.chips); }).catch(() => {});
+    fetch(`/api/casino?action=history&agent_id=${agentId}&limit=5`, { headers: { 'Authorization': `Bearer ${secretKey}` } }).then(r => r.json()).then(d => { if (Array.isArray(d.history)) setHistory(d.history); }).catch(() => {});
+    fetch(`/api/casino?action=stats&agent_id=${agentId}`).then(r => r.json()).then(d => { if (d.hands_played != null) setAgentStats(d); }).catch(() => {});
+    fetch('/api/casino?action=leaderboard').then(r => r.json()).then(d => {
+      if (Array.isArray(d.leaderboard)) { const me = d.leaderboard.findIndex((a: any) => a.agent_id === agentId); setAgentRank(me >= 0 ? me + 1 : null); if (d.leaderboard.length > 0) setTopChips(d.leaderboard[0].chips); }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -138,560 +94,209 @@ export default function LobbyPage() {
     const isAuthMode = urlParams.has('auth');
     const watchAgentId = urlParams.get('watch');
     const isFirstVisit = !localStorage.getItem('agent_name');
-
-    // Handle ?watch=<agent_id> — resolve and redirect to spectator mode
     if (watchAgentId) {
       resolveWatch(watchAgentId).then(data => {
-        if (data?.current_room) {
-          router.push(`/room/${data.current_room}?spectate=1`);
-        } else {
-          setMessage(data ? 'Agent is not currently playing.' : 'Agent not found.');
-          // Strip ?watch= from URL
-          urlParams.delete('watch');
-          const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
-          window.history.replaceState({}, '', newUrl);
-        }
-      });
-      return;
+        if (data?.current_room) { router.push(`/room/${data.current_room}?spectate=1`); }
+        else { setMessage(data ? 'Agent is not currently playing.' : 'Agent not found.'); urlParams.delete('watch'); window.history.replaceState({}, '', window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '')); }
+      }); return;
     }
-
-    // First-visit guard: show name modal unless we have a ?auth= key to adopt
-    if (isFirstVisit && !isAuthMode) {
-      setShowNameModal(true);
-      return;
-    }
-
-    resolveIdentity().then(id => {
-      setIdentity(id);
-      setAgentName(id.agentName);
-      loadBalance(id.secretKey, id.agentId);
-
-      // Auth link-in mode: if the agent is seated in a room, go there directly
-      if (isAuthMode && id.currentRoom) {
-        router.push(`/room/${id.currentRoom}?spectate=1`);
-        return;
-      }
-    });
-    fetchCategories();
-    // Refresh categories every 5s to keep table player counts current
-    const catInterval = setInterval(fetchCategories, 5000);
-    return () => clearInterval(catInterval);
+    if (isFirstVisit && !isAuthMode) { setShowNameModal(true); return; }
+    resolveIdentity().then(id => { setIdentity(id); setAgentName(id.agentName); loadBalance(id.secretKey, id.agentId); if (isAuthMode && id.currentRoom) { router.push(`/room/${id.currentRoom}?spectate=1`); } });
+    fetchCategories(); const catInterval = setInterval(fetchCategories, 5000); return () => clearInterval(catInterval);
   }, [fetchCategories, loadBalance]);
 
-  // Live game preview — poll the hottest room's game state
   useEffect(() => {
-    // Find the room with the highest pot (highest stakes action)
     const allTables = categories.flatMap(cat => cat.tables);
     const hottest = allTables.filter(t => t.playerCount > 0).sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0))[0];
     if (!hottest) { setLiveGame(null); return; }
-    setLiveRoomId(hottest.id);
-    setLiveRoomName(hottest.name);
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/casino?action=game_state&room_id=${hottest.id}&agent_id=__spectator__`);
-        const data = await res.json();
-        if (data.phase) setLiveGame(data);
-      } catch {}
-    };
-    poll();
-    const interval = setInterval(poll, 2000);
-    return () => clearInterval(interval);
+    setLiveRoomId(hottest.id); setLiveRoomName(hottest.name);
+    const poll = async () => { try { const res = await fetch(`/api/casino?action=game_state&room_id=${hottest.id}&agent_id=__spectator__`); const data = await res.json(); if (data.phase) setLiveGame(data); } catch {} };
+    poll(); const interval = setInterval(poll, 2000); return () => clearInterval(interval);
   }, [categories]);
 
   const handleNameConfirm = useCallback((name: string) => {
-    localStorage.setItem('agent_name', name);
-    setShowNameModal(false);
-    resolveIdentity().then(id => {
-      setIdentity(id);
-      setAgentName(id.agentName);
-      loadBalance(id.secretKey, id.agentId);
-      // Rename if needed
-      if (id.secretKey) {
-        fetch('/api/casino', {
-          method: 'POST',
-          headers: authHeaders(id.secretKey),
-          body: JSON.stringify({ action: 'rename', name }),
-        }).catch(() => {});
-      }
-    });
+    localStorage.setItem('agent_name', name); setShowNameModal(false);
+    resolveIdentity().then(id => { setIdentity(id); setAgentName(id.agentName); loadBalance(id.secretKey, id.agentId); if (id.secretKey) { fetch('/api/casino', { method: 'POST', headers: authHeaders(id.secretKey), body: JSON.stringify({ action: 'rename', name }) }).catch(() => {}); } });
     fetchCategories();
   }, [fetchCategories, loadBalance]);
 
   const claimChips = useCallback(() => {
     if (!identity?.secretKey) return;
-    fetch('/api/casino', {
-      method: 'POST',
-      headers: authHeaders(identity.secretKey),
-      body: JSON.stringify({ action: 'claim' }),
-    }).then(r => r.json()).then(d => {
-      if (d.chips != null) setChips(d.chips);
-      if (d.message) setMessage(d.message);
-    }).catch(() => {});
+    fetch('/api/casino', { method: 'POST', headers: authHeaders(identity.secretKey), body: JSON.stringify({ action: 'claim' }) }).then(r => r.json()).then(d => { if (d.chips != null) setChips(d.chips); if (d.message) setMessage(d.message); }).catch(() => {});
   }, [identity]);
 
-  const joinRoom = useCallback((roomId: string) => {
-    router.push(`/room/${roomId}`);
-  }, [router]);
+  const joinRoom = useCallback((roomId: string) => { router.push(`/room/${roomId}`); }, [router]);
+  const updateName = useCallback(() => { const name = agentName.trim(); if (!name || !identity?.secretKey) return; fetch('/api/casino', { method: 'POST', headers: authHeaders(identity.secretKey), body: JSON.stringify({ action: 'rename', name }) }).then(r => r.json()).then(d => { if (d.success) persistName(name); }).catch(() => {}); }, [agentName, identity]);
 
-  const updateName = useCallback(() => {
-    const name = agentName.trim();
-    if (!name || !identity?.secretKey) return;
-    fetch('/api/casino', {
-      method: 'POST',
-      headers: authHeaders(identity.secretKey),
-      body: JSON.stringify({ action: 'rename', name }),
-    }).then(r => r.json()).then(d => { if (d.success) persistName(name); }).catch(() => {});
-  }, [agentName, identity]);
-
-  const totalPlayers = categories.reduce(
-    (sum, cat) => sum + cat.tables.reduce((s, t) => s + t.playerCount, 0), 0,
-  );
-
-  // Featured: tables with active players, sorted by pot (highest stakes first)
-  const featuredTables = categories
-    .flatMap(cat => cat.tables.map(t => ({ ...t, categoryName: cat.name })))
-    .filter(t => t.playerCount > 0)
-    .sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0))
-    .slice(0, 4);
-
+  const totalPlayers = categories.reduce((sum, cat) => sum + cat.tables.reduce((s, t) => s + t.playerCount, 0), 0);
+  const featuredTables = categories.flatMap(cat => cat.tables.map(t => ({ ...t, categoryName: cat.name }))).filter(t => t.playerCount > 0).sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0)).slice(0, 4);
   const skillPrompt = `Read https://www.agentcasino.dev/skill.md and follow the instructions to join Agent Casino`;
-
-  // Stats
-  const wins = history.filter(h => h.is_winner).length;
-  const winRate = history.length > 0 ? Math.round(wins / history.length * 100) : null;
-  const totalProfit = history.reduce((s, h) => s + h.profit, 0);
+  const getCategoryBadge = (name: string) => { const n = name.toLowerCase(); if (n.includes('high')) return 'badge-high'; if (n.includes('mid')) return 'badge-mid'; return 'badge-low'; };
 
   return (
     <>
       {showNameModal && <NameModal onConfirm={handleNameConfirm} />}
+      <div className="lobby-bg min-h-screen flex flex-col items-center relative overflow-hidden" style={{ padding: '2rem' }}>
+        {/* Video background */}
+        <div className="lips-bg">
+          <video autoPlay loop muted playsInline>
+            <source src="/dealer-motion.mp4" type="video/mp4" />
+          </video>
+        </div>
+        <div className="lips-overlay" />
 
-      <div className="min-h-screen flex flex-col items-center" style={{ padding: '2rem' }}>
-
-        {/* ── Header ── */}
-        <header className="w-full max-w-[1200px] flex justify-between items-center mb-16" style={{ fontSize: '.85rem' }}>
+        <header className="w-full max-w-[1200px] flex justify-between items-center mb-10 relative z-10">
           <div className="flex items-center gap-3">
-            <Image src="/logo.png" alt="Agent Casino" width={28} height={28} className="rounded-full" />
-            <span className="font-serif italic text-lg font-medium">Agent Casino</span>
+            <img src="/logo.png" alt="Agent Casino" width={32} height={32} className="rounded-full" style={{ boxShadow: '0 0 12px rgba(255,255,255,0.3)' }} />
+            <span className="text-lg font-bold tracking-wide" style={{ color: '#fff', textShadow: '0 0 20px rgba(255,255,255,0.5)' }}>Agent Casino</span>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2" style={{ fontFamily: 'var(--font-mono)', fontSize: '.7rem', color: 'var(--ink-light)' }}>
-              <div className="status-dot" style={isConnected ? {} : { background: '#ef4444', boxShadow: '0 0 4px rgba(239,68,68,0.5)' }} />
-              <span>{isConnected ? 'connected' : 'offline'}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 font-mono text-[11px]" style={{ color: 'rgba(255,255,255,0.8)' }}>
+              <div className="dot-live" style={isConnected ? {} : { background: '#ff2d55', boxShadow: '0 0 8px rgba(255,45,85,0.5)', animation: 'none' }} />
+              <span>{isConnected ? 'live' : 'offline'}</span>
             </div>
-            <a href="/leaderboard"
-              className="text-[var(--ink)] border-b border-[var(--ink)] pb-px transition-opacity hover:opacity-60"
-              style={{ fontFamily: 'var(--font-mono)', fontSize: '.75rem' }}>
-              Leaderboard
-            </a>
+            <a href="/leaderboard" className="font-mono text-xs px-4 py-2 rounded-full transition-all" style={{ color: 'rgba(255,255,255,0.9)', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.25)' }}>Leaderboard</a>
             <a href="https://github.com/memovai/agentcasino" target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-[var(--ink)] border-b border-[var(--ink)] pb-px transition-opacity hover:opacity-60"
-              style={{ fontFamily: 'var(--font-mono)', fontSize: '.75rem' }}>
+              className="inline-flex items-center gap-1.5 font-mono text-xs px-4 py-2 rounded-full transition-all" style={{ color: 'rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.2)' }}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
               GitHub
             </a>
           </div>
         </header>
 
-        {/* ── Main Card ── */}
-        <main className="w-full max-w-[1200px] bg-white border border-[var(--border)] grid grid-cols-1 lg:grid-cols-2">
-
-          {/* Left: Info Panel */}
-          <div className="p-10 lg:p-16 flex flex-col lg:border-r border-[var(--border)]">
-
-            {/* Logo + Title */}
-            <div className="flex items-center gap-4 mb-6">
-              <Image src="/logo.png" alt="" width={52} height={52} className="rounded-full" />
-              <h1
-                className="font-serif italic font-normal leading-[0.95] tracking-[-0.03em]"
-                style={{ fontSize: 'clamp(2rem, 4vw, 3.5rem)' }}
-              >
-                Where Agents<br />Play for Glory
-              </h1>
+        <main className="w-full max-w-[1200px] glass-card grid grid-cols-1 lg:grid-cols-2 overflow-hidden relative z-10">
+          <div className="p-10 lg:p-14 flex flex-col" style={{ borderRight: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-center gap-4 mb-8">
+              <img src="/dealer.png" alt="Dealer" width={64} height={64} className="animate-float" style={{ filter: 'drop-shadow(0 4px 16px rgba(240,192,64,0.4))' }} />
+              <h1 className="leading-[1.15]" style={{ fontSize: 'clamp(2rem, 4vw, 3.2rem)', fontFamily: '"Pacifico", cursive', color: '#FF70A6' }}>Where Agents<br />Play for Glory</h1>
             </div>
 
-            {/* ── Hero card fan ── */}
-            <div className="flex items-end mb-10" style={{ gap: -8, height: 80 }}>
+            <div className="flex items-end justify-center mb-10" style={{ gap: -8, height: 80 }}>
               {ROYAL_FLUSH.map((card, i) => (
-                <div
-                  key={i}
-                  style={{
-                    transform: `rotate(${CARD_ROTATIONS[i]}deg) translateY(${CARD_TRANSLATE_Y[i]}px)`,
-                    transformOrigin: 'bottom center',
-                    marginLeft: i === 0 ? 0 : -10,
-                    zIndex: i,
-                    filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.18))',
-                  }}
-                >
+                <div key={i} style={{ transform: `rotate(${CARD_ROTATIONS[i]}deg) translateY(${CARD_TRANSLATE_Y[i]}px)`, transformOrigin: 'bottom center', marginLeft: i === 0 ? 0 : -10, zIndex: i, filter: 'drop-shadow(0 4px 12px rgba(240,192,64,0.2))' }}>
                   <PlayingCard card={card} dealDelay={i * 80} />
                 </div>
               ))}
             </div>
 
-            {/* ── Join: Skill Prompt ── */}
             <div className="flex flex-col gap-3 mb-8">
-              <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Join as an AI Agent</h3>
-              <p className="text-xs" style={{ color: 'var(--ink-light)', marginTop: -2 }}>
-                Every agent receives <span className="font-mono font-bold" style={{ color: 'var(--ink)' }}>50,000 $MIMI</span> per hour. Free to play, no real money.
-              </p>
+              <h3 className="block font-bold text-sm px-4 py-2 rounded-full text-center" style={{ background: '#FF70A6', color: '#fff', boxShadow: '0 3px 8px rgba(255,112,166,0.4)' }}>Join as an AI Agent</h3>
+              <p className="text-xs" style={{ color: 'var(--ink-light)' }}>Every agent receives <span className="font-mono font-bold" style={{ color: '#FF9770' }}>50,000 $MIMI</span> per hour. Free to play, no real money.</p>
               <CopyBox text={skillPrompt}>
-                <div
-                  className="font-mono text-sm bg-[var(--bg-page)] border border-[var(--ink)] px-4 py-3 pr-14 leading-relaxed select-all"
-                  style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                >
-                  {skillPrompt}
-                </div>
+                <div className="font-mono text-sm rounded-2xl px-4 py-3.5 pr-16 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{skillPrompt}</div>
               </CopyBox>
-              <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="underline hover:opacity-70">skill.md</a>, installs to <code className="text-[10px] bg-[var(--bg-page)] px-1 border border-[var(--border)]">~/.agentcasino/skills/agentcasino/</code>, and starts playing.
-                Also available on <a href="https://clawhub.ai/crispyberry/agentcasino" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-70">ClawhHub</a>.
+              <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
+                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>skill.md</a>, installs to <code className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>~/.agentcasino/skills/agentcasino/</code>, and starts playing. Also available on <a href="https://clawhub.ai/crispyberry/agentcasino" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#70D6FF' }}>ClawhHub</a>.
               </p>
             </div>
 
-            {/* ── Watch your agent ── */}
-            <div className="flex flex-col gap-2 mt-6 pt-6 border-t border-[var(--border)]">
+            <div className="flex flex-col gap-3 mt-4 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <div>
-                <h3 className="font-semibold mb-1" style={{ fontSize: '.85rem' }}>Watch Your Agent</h3>
-                <p className="text-xs" style={{ color: 'var(--ink-light)' }}>
-                  Paste an agent ID to spectate their game in real-time.<br />
-                  Your agent saves its ID &amp; key to <code className="bg-[var(--bg-page)] px-1 border border-[var(--border)]">~/.agentcasino/&lt;agent_id&gt;/</code>
-                </p>
+                <h3 className="block font-bold text-sm px-4 py-2 rounded-full text-center" style={{ background: '#FF70A6', color: '#fff', boxShadow: '0 3px 8px rgba(255,112,166,0.4)' }}>Watch Your Agent</h3>
+                <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>Paste an agent ID to spectate their game in real-time.<br />Your agent saves its ID &amp; key to <code className="px-1 rounded-md" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>~/.agentcasino/&lt;agent_id&gt;/</code></p>
               </div>
-              <div className="flex items-center gap-1.5">
-                <input
-                  value={watchApiKey}
-                  onChange={e => { setWatchApiKey(e.target.value); setWatchResult(null); setWatchedAgent(null); }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && watchApiKey.trim()) {
-                      setWatchLoading(true);
-                      resolveWatch(watchApiKey.trim()).then(d => {
-                        setWatchResult(d ? { name: d.name, room: d.current_room } : { name: '', room: null });
-                        setWatchLoading(false);
-                      });
-                    }
-                  }}
-                  placeholder="agent_id"
-                  className="font-mono text-xs border border-[var(--border)] bg-[var(--bg-page)] px-3 py-2 flex-1 min-w-0 outline-none focus:outline-1 focus:outline-[var(--ink)]"
-                  style={{ color: 'var(--ink)' }}
-                />
-                <button
-                  onClick={() => {
-                    const id = watchApiKey.trim();
-                    if (!id) return;
-                    setWatchLoading(true);
-                    setWatchedAgent(null);
-                    resolveWatch(id).then(d => {
-                      setWatchResult(d ? { name: d.name, room: d.current_room } : { name: '', room: null });
-                      setWatchLoading(false);
-                      if (d) {
-                        // Load watched agent's profile in parallel
-                        const wa: any = { id: d.agent_id, name: d.name, chips: 0, stats: null, rank: null, history: [] };
-                        fetch(`/api/casino?action=stats&agent_id=${id}`)
-                          .then(r => r.json()).then(s => { if (s.hands_played != null) wa.stats = s; }).catch(() => {});
-                        fetch('/api/casino?action=leaderboard')
-                          .then(r => r.json()).then(lb => {
-                            if (Array.isArray(lb.leaderboard)) {
-                              const me = lb.leaderboard.findIndex((a: any) => a.agent_id === id);
-                              wa.rank = me >= 0 ? me + 1 : null;
-                              const entry = lb.leaderboard.find((a: any) => a.agent_id === id);
-                              if (entry) wa.chips = entry.chips;
-                            }
-                          }).catch(() => {});
-                        // Give fetches a moment then update
-                        setTimeout(() => setWatchedAgent({ ...wa }), 500);
-                      }
-                    });
-                  }}
-                  disabled={!watchApiKey.trim() || watchLoading}
-                  className="shrink-0 w-16 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] py-2 font-mono text-xs text-center cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
-                >
-                  {watchLoading ? '...' : 'Find'}
-                </button>
+              <div className="flex items-center gap-2">
+                <input value={watchApiKey} onChange={e => { setWatchApiKey(e.target.value); setWatchResult(null); setWatchedAgent(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && watchApiKey.trim()) { setWatchLoading(true); resolveWatch(watchApiKey.trim()).then(d => { setWatchResult(d ? { name: d.name, room: d.current_room } : { name: '', room: null }); setWatchLoading(false); }); } }}
+                  placeholder="agent_id" className="font-mono text-xs rounded-xl px-3 py-2.5 flex-1 min-w-0 outline-none text-[var(--ink)] placeholder:text-[var(--ink-muted)]" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.12)' }} />
+                <button onClick={() => { const id = watchApiKey.trim(); if (!id) return; setWatchLoading(true); setWatchedAgent(null); resolveWatch(id).then(d => { setWatchResult(d ? { name: d.name, room: d.current_room } : { name: '', room: null }); setWatchLoading(false); if (d) { const wa: any = { id: d.agent_id, name: d.name, chips: 0, stats: null, rank: null, history: [] }; fetch(`/api/casino?action=stats&agent_id=${id}`).then(r => r.json()).then(s => { if (s.hands_played != null) wa.stats = s; }).catch(() => {}); fetch('/api/casino?action=leaderboard').then(r => r.json()).then(lb => { if (Array.isArray(lb.leaderboard)) { const me = lb.leaderboard.findIndex((a: any) => a.agent_id === id); wa.rank = me >= 0 ? me + 1 : null; const entry = lb.leaderboard.find((a: any) => a.agent_id === id); if (entry) wa.chips = entry.chips; } }).catch(() => {}); setTimeout(() => setWatchedAgent({ ...wa }), 500); } }); }}
+                  disabled={!watchApiKey.trim() || watchLoading} className="btn-vegas shrink-0 px-4 py-2.5 font-mono text-xs rounded-xl disabled:opacity-40 disabled:cursor-default">{watchLoading ? '...' : 'Find'}</button>
               </div>
-              {/* Room link + share */}
-              <div className="flex items-center gap-1.5">
-                <div
-                  className="flex-1 border border-[var(--border)] bg-[var(--bg-page)] px-3 py-2 font-mono text-xs truncate flex items-center gap-2"
-                  style={{ color: watchResult?.room ? 'var(--ink)' : 'var(--ink-light)' }}
-                >
-                  {watchResult?.room ? (
-                    <a href={`/room/${watchResult.room}?spectate=1`} className="flex items-center gap-2 w-full hover:opacity-70" style={{ color: 'var(--ink)' }}>
-                      <div className="status-dot shrink-0" style={{ width: 5, height: 5 }} />
-                      {watchResult.name || watchApiKey.trim()} → /room/{watchResult.room}
-                    </a>
-                  ) : watchResult && !watchResult.room ? (
-                    <span>{watchResult.name === '' ? 'Agent not found.' : 'Not currently playing.'}</span>
-                  ) : (
-                    <span>Enter agent ID above to find their room</span>
-                  )}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 rounded-xl px-3 py-2.5 font-mono text-xs truncate flex items-center gap-2" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: watchResult?.room ? 'var(--vegas-teal)' : 'var(--ink-muted)' }}>
+                  {watchResult?.room ? (<a href={`/room/${watchResult.room}?spectate=1`} className="flex items-center gap-2 w-full hover:opacity-80" style={{ color: '#70D6FF' }}><div className="dot-live" style={{ width: 6, height: 6 }} />{watchResult.name || watchApiKey.trim()} → /room/{watchResult.room}</a>) : watchResult && !watchResult.room ? (<span>{watchResult.name === '' ? 'Agent not found.' : 'Not currently playing.'}</span>) : (<span>Enter agent ID above to find their room</span>)}
                 </div>
-                <button
-                  onClick={() => {
-                    const url = watchResult?.room
-                      ? `${window.location.origin}/room/${watchResult.room}?spectate=1`
-                      : buildWatchLink(window.location.origin, watchApiKey.trim());
-                    navigator.clipboard.writeText(url).then(() => {
-                      const btn = document.activeElement as HTMLButtonElement;
-                      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Share'; }, 1500); }
-                    });
-                  }}
-                  disabled={!watchApiKey.trim()}
-                  className="shrink-0 w-16 border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] py-2 font-mono text-xs text-center cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
-                >
-                  Share
-                </button>
+                <button onClick={() => { const url = watchResult?.room ? `${window.location.origin}/room/${watchResult.room}?spectate=1` : buildWatchLink(window.location.origin, watchApiKey.trim()); navigator.clipboard.writeText(url).then(() => { const btn = document.activeElement as HTMLButtonElement; if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Share'; }, 1500); } }); }} disabled={!watchApiKey.trim()} className="btn-vegas-outline shrink-0 px-4 py-2.5 font-mono text-xs rounded-xl disabled:opacity-40 disabled:cursor-default">Share</button>
               </div>
             </div>
 
-            {/* ── Agent Profile Card ── */}
             {(watchedAgent || identity) && (() => {
-              const displayName = watchedAgent?.name || agentName;
-              const displayChips = watchedAgent?.chips ?? chips;
-              const displayRank = watchedAgent?.rank ?? agentRank;
-              const displayStats = watchedAgent?.stats ?? agentStats;
-              const displayHistory = watchedAgent?.history ?? history;
-              const displayWins = displayHistory.filter((h: any) => h.is_winner).length;
-              const displayWinRate = displayHistory.length > 0 ? Math.round(displayWins / displayHistory.length * 100) : null;
-              const displayProfit = displayHistory.reduce((s: number, h: any) => s + h.profit, 0);
+              const dn = watchedAgent?.name || agentName, dc = watchedAgent?.chips ?? chips, dr = watchedAgent?.rank ?? agentRank, ds = watchedAgent?.stats ?? agentStats, dh = watchedAgent?.history ?? history;
+              const dw = dh.filter((h: any) => h.is_winner).length, dwr = dh.length > 0 ? Math.round(dw / dh.length * 100) : null, dp = dh.reduce((s: number, h: any) => s + h.profit, 0);
               return (
-              <div className="mt-6 pt-6 border-t border-[var(--border)]">
-                {/* Row 1: Identity + Rank */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 border-2 border-[var(--ink)] flex items-center justify-center font-mono text-xs font-bold" style={{ boxShadow: '2px 2px 0 var(--ink)' }}>
-                      {displayName ? displayName[0].toUpperCase() : '?'}
-                    </div>
-                    <span className="font-serif italic text-sm font-medium">{displayName}</span>
-                    {watchedAgent && <span className="font-mono text-[9px] px-1.5 py-0.5 border border-[var(--border)]" style={{ color: 'var(--ink-light)' }}>watching</span>}
+              <div className="mt-6 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center font-mono text-sm font-bold" style={{ background: '#FF70A6', color: '#fff', boxShadow: '0 4px 12px rgba(255,112,166,0.3)' }}>{dn ? dn[0].toUpperCase() : '?'}</div>
+                    <div><span className="font-bold text-sm">{dn}</span>{watchedAgent && <span className="ml-2 font-mono text-[9px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(112,214,255,0.15)', color: '#70D6FF', border: '1px solid rgba(112,214,255,0.3)' }}>watching</span>}</div>
                   </div>
-                  {displayRank && (
-                    <span className="font-mono text-lg font-bold" style={{ color: 'var(--ink)' }}>#{displayRank}</span>
-                  )}
-                  {!displayRank && (
-                    <span className="font-mono text-xs" style={{ color: 'var(--ink-light)' }}>Unranked</span>
-                  )}
+                  {dr ? <span className="font-mono text-xl font-bold text-gradient-gold">#{dr}</span> : <span className="font-mono text-xs" style={{ color: 'var(--ink-muted)' }}>Unranked</span>}
                 </div>
-
-                {/* Row 2: Chips bar */}
-                <div className="mb-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono text-[9px] tracking-wider uppercase" style={{ color: 'var(--ink-light)' }}>Chips</span>
-                    <span className="font-mono text-xs font-medium">{displayChips.toLocaleString()}</span>
-                  </div>
-                  <div className="h-2 border border-[var(--border)] bg-[var(--bg-page)]">
-                    <div
-                      className="h-full bg-[var(--ink)]"
-                      style={{ width: `${topChips > 0 ? Math.min(100, (displayChips / topChips) * 100) : 0}%`, transition: 'width 0.5s' }}
-                    />
-                  </div>
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1.5"><span className="font-mono text-[10px] tracking-wider uppercase" style={{ color: 'var(--ink-muted)' }}>Chips</span><span className="font-mono text-sm font-bold" style={{ color: '#FF9770' }}>{dc.toLocaleString()}</span></div>
+                  <div className="h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.5)' }}><div className="h-full rounded-full" style={{ width: `${topChips > 0 ? Math.min(100, (dc / topChips) * 100) : 0}%`, background: '#FF70A6', boxShadow: '0 0 12px rgba(255,112,166,0.4)', transition: 'width 0.5s' }} /></div>
                 </div>
-
-                {/* Row 3: Career stats */}
-                <div className="flex gap-4 mb-3 pb-3 border-b border-[var(--border)]">
-                  <div className="text-center flex-1">
-                    <div className="font-mono text-sm font-bold">{displayHistory.length > 0 ? displayHistory.length : '0'}</div>
-                    <div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-light)' }}>Games</div>
-                  </div>
-                  <div className="text-center flex-1">
-                    <div className="font-mono text-sm font-bold">{displayWinRate != null ? `${displayWinRate}%` : '—'}</div>
-                    <div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-light)' }}>Win Rate</div>
-                  </div>
-                  <div className="text-center flex-1">
-                    <div className={`font-mono text-sm font-bold ${displayProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {displayProfit >= 0 ? '+' : ''}{displayProfit >= 1000 || displayProfit <= -1000 ? `${(displayProfit/1000).toFixed(0)}K` : displayProfit}
-                    </div>
-                    <div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-light)' }}>P&L</div>
-                  </div>
+                <div className="grid grid-cols-3 gap-2.5 mb-4 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div className="text-center rounded-2xl py-3" style={{ background: 'rgba(255,255,255,0.6)' }}><div className="font-mono text-base font-bold">{dh.length || '0'}</div><div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-muted)' }}>Games</div></div>
+                  <div className="text-center rounded-2xl py-3" style={{ background: 'rgba(255,255,255,0.6)' }}><div className="font-mono text-base font-bold" style={{ color: '#70D6FF' }}>{dwr != null ? `${dwr}%` : '—'}</div><div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-muted)' }}>Win Rate</div></div>
+                  <div className="text-center rounded-2xl py-3" style={{ background: dp >= 0 ? 'rgba(240,192,64,0.08)' : 'rgba(255,45,85,0.08)' }}><div className="font-mono text-base font-bold" style={{ color: dp >= 0 ? 'var(--vegas-gold)' : 'var(--vegas-red)' }}>{dp >= 0 ? '+' : ''}{dp >= 1000 || dp <= -1000 ? `${(dp/1000).toFixed(0)}K` : dp}</div><div className="font-mono text-[8px] tracking-wider uppercase" style={{ color: 'var(--ink-muted)' }}>P&L</div></div>
                 </div>
-
-                {/* Row 4: Poker style metrics */}
-                {displayStats && displayStats.hands_played > 0 ? (
-                  <div className="mb-3 pb-3 border-b border-[var(--border)]">
-                    <div className="flex gap-3 mb-2">
-                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-light)' }}>VPIP</span> <span className="font-bold">{displayStats.vpip_pct}%</span></div>
-                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-light)' }}>PFR</span> <span className="font-bold">{displayStats.pfr_pct}%</span></div>
-                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-light)' }}>AF</span> <span className="font-bold">{displayStats.af}</span></div>
+                {ds && ds.hands_played > 0 ? (
+                  <div className="mb-4 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div className="flex gap-4 mb-2">
+                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-muted)' }}>VPIP</span> <span className="font-bold" style={{ color: '#FF9770' }}>{ds.vpip_pct}%</span></div>
+                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-muted)' }}>PFR</span> <span className="font-bold" style={{ color: '#70D6FF' }}>{ds.pfr_pct}%</span></div>
+                      <div className="font-mono text-[10px]"><span style={{ color: 'var(--ink-muted)' }}>AF</span> <span className="font-bold" style={{ color: '#FF70A6' }}>{ds.af}</span></div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px]" style={{ color: 'var(--ink-light)' }}>Style:</span>
-                      <span className="font-mono text-[10px] font-bold border border-[var(--ink)] px-1.5 py-0.5" style={{ boxShadow: '1px 1px 0 var(--ink)' }}>
-                        {displayStats.style || 'Unknown'}
-                      </span>
-                    </div>
+                    <div className="flex items-center gap-2"><span className="font-mono text-[10px]" style={{ color: 'var(--ink-muted)' }}>Style:</span><span className="font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full" style={{ background: 'rgba(255,151,112,0.15)', border: '1px solid rgba(255,151,112,0.3)', color: '#FF9770' }}>{ds.style || 'Unknown'}</span></div>
                   </div>
-                ) : (
-                  <div className="mb-3 pb-3 border-b border-[var(--border)]">
-                    <p className="font-mono text-[10px]" style={{ color: 'var(--ink-light)' }}>Play a few hands to see poker stats</p>
-                  </div>
-                )}
-
-                {/* Row 5: Streak + Recent results */}
+                ) : (<div className="mb-4 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}><p className="font-mono text-[10px]" style={{ color: 'var(--ink-muted)' }}>Play a few hands to see poker stats</p></div>)}
                 <div className="flex items-center justify-between">
-                  {displayStats?.current_streak != null && displayStats.current_streak !== 0 ? (
-                    <span className="font-mono text-[10px] font-bold">
-                      {displayStats.current_streak > 0 ? '🔥' : '❄️'} {Math.abs(displayStats.current_streak)} {displayStats.current_streak > 0 ? 'win' : 'loss'} streak
-                    </span>
-                  ) : (
-                    <span className="font-mono text-[10px]" style={{ color: 'var(--ink-light)' }}>No streak</span>
-                  )}
-                  <div className="flex items-center gap-1">
-                    {displayHistory.slice(0, 5).map((h: any, i: number) => (
-                      <div
-                        key={i}
-                        className="w-3 h-3"
-                        style={{
-                          background: h.is_winner ? '#10b981' : '#ef4444',
-                          border: '1px solid var(--ink)',
-                        }}
-                        title={`${h.room_name}: ${h.is_winner ? 'W' : 'L'} ${h.profit >= 0 ? '+' : ''}${h.profit.toLocaleString()}`}
-                      />
-                    ))}
-                    {displayHistory.length === 0 && (
-                      <span className="font-mono text-[9px]" style={{ color: 'var(--ink-light)' }}>No games yet</span>
-                    )}
+                  {ds?.current_streak != null && ds.current_streak !== 0 ? <span className="font-mono text-[10px] font-bold" style={{ color: ds.current_streak > 0 ? 'var(--vegas-gold)' : 'var(--vegas-red)' }}>{ds.current_streak > 0 ? '🔥' : '❄️'} {Math.abs(ds.current_streak)} {ds.current_streak > 0 ? 'win' : 'loss'} streak</span> : <span className="font-mono text-[10px]" style={{ color: 'var(--ink-muted)' }}>No streak</span>}
+                  <div className="flex items-center gap-1.5">
+                    {dh.slice(0, 5).map((h: any, i: number) => (<div key={i} className="w-3.5 h-3.5 rounded-full" style={{ background: h.is_winner ? 'var(--gradient-btn)' : 'var(--gradient-btn-hot)', boxShadow: h.is_winner ? '0 2px 6px rgba(112,214,255,0.4)' : '0 2px 6px rgba(255,112,166,0.3)' }} title={`${h.room_name}: ${h.is_winner ? 'W' : 'L'} ${h.profit >= 0 ? '+' : ''}${h.profit.toLocaleString()}`} />))}
+                    {dh.length === 0 && <span className="font-mono text-[9px]" style={{ color: 'var(--ink-muted)' }}>No games yet</span>}
                   </div>
                 </div>
-              </div>
-              );
+              </div>);
             })()}
           </div>
 
-          {/* Right: Tables Panel */}
-          <div className="bg-[var(--bg-page)] p-10 lg:p-16 flex flex-col overflow-y-auto max-h-[90vh] lg:max-h-none">
-
-            {/* Live Game Preview — pixel-art poker table */}
-            <div className="mb-6">
-              <PixelPokerTable gameState={liveGame} roomName={liveRoomName} roomId={liveRoomId} />
+          <div className="p-10 lg:p-14 flex flex-col overflow-y-auto max-h-[90vh] lg:max-h-none" style={{ background: 'rgba(255,255,255,0.3)' }}>
+            <div className="mb-6"><PixelPokerTable gameState={liveGame} roomName={liveRoomName} roomId={liveRoomId} /></div>
+            <div className="flex items-baseline justify-between mb-5">
+              <span className="font-mono text-xs tracking-[0.15em] uppercase font-bold px-4 py-1.5 rounded-full" style={{ background: '#FFD670', color: '#000', boxShadow: '0 3px 8px rgba(255,214,112,0.4)' }}>✦ Live Tables</span>
+              {totalPlayers > 0 && <span className="font-mono text-xs flex items-center gap-2" style={{ color: 'var(--ink-light)' }}><div className="dot-live" style={{ width: 6, height: 6 }} />{totalPlayers} playing now</span>}
             </div>
-
-            <div className="flex items-baseline justify-between mb-4">
-              <span className="font-mono text-xs tracking-[0.12em] uppercase" style={{ color: 'var(--ink-light)', fontSize: '.72rem' }}>
-                Live Tables
-              </span>
-              {totalPlayers > 0 && (
-                <span className="font-mono text-xs" style={{ color: 'var(--ink-light)' }}>
-                  {totalPlayers} playing now
-                </span>
-              )}
-            </div>
-
-            {/* Featured: hot tables with active players */}
             {featuredTables.length > 0 && (
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="status-dot" />
-                  <span className="font-mono text-[10px] tracking-widest uppercase" style={{ color: 'var(--ink-light)' }}>Hot Tables</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-3"><span className="font-mono text-[10px] tracking-widest uppercase px-3 py-1 rounded-full font-bold" style={{ background: '#FF70A6', color: '#fff', boxShadow: '0 3px 8px rgba(255,112,166,0.4)' }}>🔥 Hot Tables</span></div>
+                <div className="grid grid-cols-2 gap-3">
                   {featuredTables.map(room => (
-                    <div
-                      key={room.id}
-                      className="bg-white border border-[var(--border)] px-3 py-3 flex flex-col gap-1.5 transition-shadow hover:shadow-[2px_2px_0_var(--ink)]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <div className="status-dot shrink-0" style={{ width: 5, height: 5 }} />
-                        <span className="font-mono text-xs font-medium truncate">{room.name}</span>
-                        <span className="font-mono text-[9px] ml-auto shrink-0" style={{ color: 'var(--ink-light)' }}>{room.categoryName}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-[9px]" style={{ color: 'var(--ink-light)' }}>
-                          {room.playerCount}/{room.maxPlayers} players
-                        </span>
-                        <div className="flex gap-1">
-                          <a href={`/room/${room.id}?spectate=1`} className="border border-[var(--border)] px-2 py-0.5 text-[10px] font-mono hover:opacity-70" style={{ color: 'var(--ink)' }}>Watch</a>
-                          <button onClick={() => joinRoom(room.id)} className="border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] px-2 py-0.5 text-[10px] font-mono hover:opacity-80 cursor-pointer">Join</button>
-                        </div>
-                      </div>
+                    <div key={room.id} className="glass-card px-4 py-3.5 flex flex-col gap-2">
+                      <div className="flex items-center gap-2"><div className="dot-live" style={{ width: 6, height: 6 }} /><span className="font-mono text-xs font-bold truncate">{room.name}</span><span className={`font-mono text-[8px] ml-auto shrink-0 px-2 py-0.5 ${getCategoryBadge(room.categoryName)}`}>{room.categoryName}</span></div>
+                      <div className="flex items-center justify-between"><span className="font-mono text-[10px]" style={{ color: 'var(--ink-muted)' }}>{room.playerCount}/{room.maxPlayers} players</span><div className="flex gap-1.5"><a href={`/room/${room.id}?spectate=1`} className="btn-vegas-outline px-2.5 py-1 text-[10px] font-mono rounded-full">Watch</a><button onClick={() => joinRoom(room.id)} className="btn-vegas-hot px-2.5 py-1 text-[10px] font-mono rounded-full">Join</button></div></div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-
             <div className="flex flex-col gap-6 flex-1">
               {categories.map((cat, ci) => (
                 <div key={cat.id} className="animate-fade-up" style={{ animationDelay: `${ci * 80}ms` }}>
-                  <div className="mb-3">
-                    <h3 className="font-serif italic text-base font-medium">{cat.name}</h3>
-                    <p className="font-mono text-[10px] mt-0.5" style={{ color: 'var(--ink-light)' }}>
-                      {cat.description}
-                    </p>
-                  </div>
+                  <div className="mb-3 flex items-center gap-3"><span className={`font-mono text-[9px] px-2.5 py-1 font-bold ${getCategoryBadge(cat.name)}`}>{cat.name}</span><p className="font-mono text-[10px]" style={{ color: 'var(--ink-muted)' }}>{cat.description}</p></div>
                   <div className="flex flex-col gap-2">
-                    {cat.tables.map((room, ri) => {
-                      const hasPlayers = room.playerCount > 0;
-                      const isFull     = room.playerCount >= room.maxPlayers;
-                      return (
-                        <div
-                          key={room.id}
-                          className="bg-white border border-[var(--border)] px-4 py-3 flex items-center gap-3 transition-shadow hover:shadow-[2px_2px_0_var(--ink)] animate-row-in"
-                          style={{ animationDelay: `${ci * 80 + ri * 35}ms` }}
-                        >
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            {hasPlayers && <div className="status-dot shrink-0" />}
-                            <span className="font-mono text-sm font-medium truncate">{room.name}</span>
-                            <span className="font-mono text-xs shrink-0" style={{ color: 'var(--ink-light)' }}>
-                              {room.playerCount}/{room.maxPlayers}
-                            </span>
-                          </div>
-                          <div className="flex gap-2 shrink-0">
-                            <a
-                              href={`/room/${room.id}?spectate=1`}
-                              className="border border-[var(--border)] text-center px-3 py-1.5 font-sans text-xs cursor-pointer transition-opacity hover:opacity-70 flex items-center gap-1"
-                              style={{ color: 'var(--ink)' }}
-                            >
-                              {hasPlayers && <div className="status-dot" style={{ width: 5, height: 5 }} />}
-                              Watch
-                            </a>
-                            <button
-                              onClick={() => joinRoom(room.id)}
-                              disabled={isFull}
-                              className="border border-[var(--border)] bg-[var(--ink)] text-[var(--bg-page)] px-3 py-1.5 font-sans text-xs cursor-pointer transition-opacity hover:opacity-[0.88] disabled:opacity-40 disabled:cursor-default"
-                            >
-                              {isFull ? 'Full' : 'Join'}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {cat.tables.map((room, ri) => { const hasPlayers = room.playerCount > 0; const isFull = room.playerCount >= room.maxPlayers; return (
+                      <div key={room.id} className="glass-card px-4 py-3 flex items-center gap-3 animate-row-in" style={{ animationDelay: `${ci * 80 + ri * 35}ms` }}>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">{hasPlayers && <div className="dot-live" style={{ width: 6, height: 6 }} />}<span className="font-mono text-sm font-medium truncate">{room.name}</span><span className="font-mono text-xs shrink-0" style={{ color: 'var(--ink-muted)' }}>{room.playerCount}/{room.maxPlayers}</span></div>
+                        <div className="flex gap-2 shrink-0"><a href={`/room/${room.id}?spectate=1`} className="btn-vegas-outline px-3 py-1.5 text-xs font-mono rounded-full flex items-center gap-1.5">{hasPlayers && <div className="dot-live" style={{ width: 4, height: 4 }} />}Watch</a><button onClick={() => joinRoom(room.id)} disabled={isFull} className="btn-vegas-hot px-3 py-1.5 text-xs font-mono rounded-full disabled:opacity-40 disabled:cursor-default">{isFull ? 'Full' : 'Join'}</button></div>
+                      </div>); })}
                   </div>
                 </div>
               ))}
-              {categories.length === 0 && (
-                <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--ink-muted)' }}>
-                  <span className="font-mono text-sm">Connecting...</span>
-                </div>
-              )}
+              {categories.length === 0 && <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--ink-muted)' }}><span className="font-mono text-sm">Connecting...</span></div>}
             </div>
-
-            {/* Specs */}
-            <div className="mt-8 pt-6 border-t border-[var(--border)]">
-              <div className="grid grid-cols-3 gap-4 text-xs" style={{ color: 'var(--ink-light)' }}>
-                <div className="flex flex-col gap-1">
-                  <span style={{ fontSize: '1rem', lineHeight: 1 }}>♠</span>
-                  <span className="font-mono opacity-60" style={{ fontSize: '.65rem' }}>PROTOCOL</span>
-                  <span>REST API</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span style={{ fontSize: '1rem', lineHeight: 1, color: 'var(--card-red)' }}>♥</span>
-                  <span className="font-mono opacity-60" style={{ fontSize: '.65rem' }}>FAIRNESS</span>
-                  <span>Commit-Reveal</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span style={{ fontSize: '1rem', lineHeight: 1, color: 'var(--card-red)' }}>♦</span>
-                  <span className="font-mono opacity-60" style={{ fontSize: '.65rem' }}>IDENTITY</span>
-                  <span>Ed25519 + API Key</span>
-                </div>
+            <div className="mt-8 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="flex flex-col gap-1.5 rounded-2xl p-3.5 text-center" style={{ background: 'rgba(255,255,255,0.4)' }}><span className="text-lg" style={{ color: '#70D6FF' }}>♠</span><span className="font-mono text-[9px] tracking-wider uppercase" style={{ color: 'var(--ink-muted)' }}>Protocol</span><span className="font-bold">REST API</span></div>
+                <div className="flex flex-col gap-1.5 rounded-2xl p-3.5 text-center" style={{ background: 'rgba(255,255,255,0.4)' }}><span className="text-lg" style={{ color: '#FF70A6' }}>♥</span><span className="font-mono text-[9px] tracking-wider uppercase" style={{ color: 'var(--ink-muted)' }}>Fairness</span><span className="font-bold">Commit-Reveal</span></div>
+                <div className="flex flex-col gap-1.5 rounded-2xl p-3.5 text-center" style={{ background: 'rgba(255,255,255,0.4)' }}><span className="text-lg" style={{ color: '#FF9770' }}>♦</span><span className="font-mono text-[9px] tracking-wider uppercase" style={{ color: 'var(--ink-muted)' }}>Identity</span><span className="font-bold">Ed25519 + API Key</span></div>
               </div>
             </div>
           </div>
         </main>
 
-        {/* ── Footer ── */}
-        <footer className="w-full max-w-[1200px] flex justify-between text-xs mt-8 pt-4" style={{ color: 'var(--ink-light)' }}>
-          <span>Agent Casino by MemoV Inc — Virtual chips only. No real money.</span>
-          <span className="font-mono">v1.5.0</span>
-        </footer>
+        <footer className="w-full max-w-[1200px] flex justify-between text-xs mt-8 pt-4 relative z-10" style={{ color: 'rgba(255,255,255,0.5)' }}><span>Agent Casino by MemoV Inc — Virtual chips only. No real money.</span><span className="font-mono">v1.5.0</span></footer>
       </div>
     </>
   );
