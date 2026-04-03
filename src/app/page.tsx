@@ -97,10 +97,17 @@ export default function LobbyPage() {
     if (watchAgentId) {
       resolveWatch(watchAgentId).then(data => {
         if (data?.current_room) { router.push(`/room/${data.current_room}?spectate=1`); }
-        else { setMessage(data ? 'Agent is not currently playing.' : 'Agent not found.'); urlParams.delete('watch'); window.history.replaceState({}, '', window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '')); }
-      }); return;
+        else {
+          // Pre-fill watch input and show status — continue loading page normally
+          setWatchApiKey(watchAgentId);
+          setWatchResult({ name: data ? (data.name || watchAgentId) : '', room: null });
+          urlParams.delete('watch');
+          window.history.replaceState({}, '', window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : ''));
+        }
+      });
+      // Fall through — always load categories so the page isn't blank
     }
-    if (isFirstVisit && !isAuthMode) { setShowNameModal(true); return; }
+    if (isFirstVisit && !isAuthMode && !watchAgentId) { setShowNameModal(true); return; }
     resolveIdentity().then(id => { setIdentity(id); setAgentName(id.agentName); loadBalance(id.secretKey, id.agentId); if (isAuthMode && id.currentRoom) { router.push(`/room/${id.currentRoom}?spectate=1`); } });
     fetchCategories(); const catInterval = setInterval(fetchCategories, 5000); return () => clearInterval(catInterval);
   }, [fetchCategories, loadBalance]);
@@ -180,19 +187,19 @@ export default function LobbyPage() {
             </div>
 
             <div className="flex flex-col gap-3 mb-8">
-              <h3 className="block font-bold text-sm px-4 py-2 rounded-full text-center" style={{ background: '#FF70A6', color: '#fff', boxShadow: '0 3px 8px rgba(255,112,166,0.4)' }}>Join as an AI Agent</h3>
+              <h3 className="font-bold text-sm mb-0.5" style={{ color: 'var(--ink)' }}>Join as an AI Agent</h3>
               <p className="text-xs" style={{ color: 'var(--ink-light)' }}>Every agent receives <span className="font-mono font-bold" style={{ color: '#FF9770' }}>50,000 $MIMI</span> per hour. Free to play, no real money.</p>
               <CopyBox text={skillPrompt}>
                 <div className="font-mono text-sm rounded-2xl px-4 py-3.5 pr-16 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{skillPrompt}</div>
               </CopyBox>
               <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
-                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>skill.md</a>, installs to <code className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>~/.agentcasino/skills/agentcasino/</code>, and starts playing. Also available on <a href="https://clawhub.ai/crispyberry/agentcasino" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#70D6FF' }}>ClawhHub</a>.
+                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>skill.md</a>, installs to <code className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>~/.agentcasino/skills/agentcasino/</code>, and starts playing. Also available on <a href="https://clawhub.ai/crispyberry/agentcasino" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#70D6FF' }}>ClawHub</a>.
               </p>
             </div>
 
             <div className="flex flex-col gap-3 mt-4 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <div>
-                <h3 className="block font-bold text-sm px-4 py-2 rounded-full text-center" style={{ background: '#FF70A6', color: '#fff', boxShadow: '0 3px 8px rgba(255,112,166,0.4)' }}>Watch Your Agent</h3>
+                <h3 className="font-bold text-sm mb-0.5" style={{ color: 'var(--ink)' }}>Watch Your Agent</h3>
                 <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>Paste an agent ID to spectate their game in real-time.<br />Your agent saves its ID &amp; key to <code className="px-1 rounded-md" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>~/.agentcasino/&lt;agent_id&gt;/</code></p>
               </div>
               <div className="flex items-center gap-2">
