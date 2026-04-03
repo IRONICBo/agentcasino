@@ -9,51 +9,41 @@ import { Agent, WinnerInfo, Player } from './types';
 
 // ── Agents ──────────────────────────────────────────────────────────────────
 
-/** Load all agent chip balances from DB on server startup */
+/** Load all agents from DB on server startup (includes claim tracking) */
 export async function loadAgents(): Promise<Map<string, Agent>> {
   const { data, error } = await supabase
     .from('casino_agents')
-    .select('id, name, chips');
+    .select('id, name, chips, claims_today, last_claim_at, last_claim_date');
 
   if (error) { console.error('[casino-db] loadAgents:', error.message); return new Map(); }
 
   const map = new Map<string, Agent>();
   for (const row of data ?? []) {
     map.set(row.id, {
-      id: row.id,
-      name: row.name,
-      chips: row.chips,
-      claimsToday:    0,
-      lastClaimAt:    0,
-      lastClaimDate:  '',
-      createdAt:      Date.now(),
+      id:            row.id,
+      name:          row.name,
+      chips:         row.chips,
+      claimsToday:   row.claims_today    ?? 0,
+      lastClaimAt:   row.last_claim_at   ?? 0,
+      lastClaimDate: row.last_claim_date ?? '',
+      createdAt:     Date.now(),
     });
   }
   return map;
 }
 
-/** Upsert agent after any chip change */
+/** Upsert agent — persists chips AND claim tracking */
 export function saveAgent(agent: Agent): void {
   supabase.from('casino_agents').upsert({
-    id:    agent.id,
-    name:  agent.name,
-    chips: agent.chips,
+    id:              agent.id,
+    name:            agent.name,
+    chips:           agent.chips,
+    claims_today:    agent.claimsToday,
+    last_claim_at:   agent.lastClaimAt,
+    last_claim_date: agent.lastClaimDate,
   }, { onConflict: 'id' }).then(({ error }) => {
     if (error) console.error('[casino-db] saveAgent:', error.message);
   });
-}
-
-/** Increment wins + total_won when an agent wins a hand */
-export function recordAgentWin(agentId: string, amount: number): void {
-  supabase.rpc('casino_record_win', { p_agent_id: agentId, p_amount: amount })
-    .then(({ error }) => {
-      if (error) {
-        // Fallback: manual increment
-        supabase.from('casino_agents')
-          .update({ games_won: supabase.rpc as any })
-          .eq('id', agentId);
-      }
-    });
 }
 
 // ── Room Players ─────────────────────────────────────────────────────────────
@@ -238,15 +228,113 @@ export async function getRecentMessages(roomId: string, limit = 50): Promise<{
 
 // ── Leaderboard ──────────────────────────────────────────────────────────────
 
-export async function getLeaderboard(limit = 20) {
+export async function getLeaderboard(limit = 50) {
+  const [agentsResult, tableResult] = await Promise.all([
+    supabase
+      .from('casino_agents')
+      .select('id, name, chips, games_played, games_won, total_won, vpip_hands, pfr_hands, aggressive_actions, passive_actions, showdown_hands, showdown_wins, cbet_opportunities, cbet_made')
+      .order('chips', { ascending: false })
+      .limit(limit * 2), // fetch extra so re-sorting by total chips still gives top N
+    supabase
+      .from('casino_room_players')
+      .select('agent_id, chips_at_table'),
+  ]);
+
+  if (agentsResult.error) { console.error('[casino-db] getLeaderboard:', agentsResult.error.message); return []; }
+
+  // Build map of at-table chips per agent
+  const tableChips = new Map<string, number>();
+  for (const row of tableResult.data ?? []) {
+    tableChips.set(row.agent_id, (tableChips.get(row.agent_id) ?? 0) + row.chips_at_table);
+  }
+
+  return (agentsResult.data ?? [])
+    .map(a => ({ ...a, chips: a.chips + (tableChips.get(a.id) ?? 0) }))
+    .sort((a, b) => b.chips - a.chips)
+    .slice(0, limit);
+}
+
+// ── Agent Stats (VPIP/PFR/AF etc.) ──────────────────────────────────────────
+
+export interface AgentStatsRow {
+  handsPlayed:        number;
+  vpipHands:          number;
+  pfrHands:           number;
+  aggressiveActions:  number;
+  passiveActions:     number;
+  showdownHands:      number;
+  showdownWins:       number;
+  cbetOpportunities:  number;
+  cbetMade:           number;
+  bestWinStreak:      number;
+  worstLossStreak:    number;
+}
+
+/** Persist poker stats for one agent (fire-and-forget). */
+export function saveAgentStats(agentId: string, s: AgentStatsRow): void {
+  supabase.from('casino_agents').update({
+    games_played:       s.handsPlayed,
+    vpip_hands:         s.vpipHands,
+    pfr_hands:          s.pfrHands,
+    aggressive_actions: s.aggressiveActions,
+    passive_actions:    s.passiveActions,
+    showdown_hands:     s.showdownHands,
+    showdown_wins:      s.showdownWins,
+    cbet_opportunities: s.cbetOpportunities,
+    cbet_made:          s.cbetMade,
+    best_win_streak:    s.bestWinStreak,
+    worst_loss_streak:  s.worstLossStreak,
+  }).eq('id', agentId).then(({ error }) => {
+    if (error) console.error('[casino-db] saveAgentStats:', error.message);
+  });
+}
+
+/** Load one agent's poker stats directly from DB (for cross-instance accurate reads). */
+export async function loadAgentStats(agentId: string): Promise<AgentStatsRow | null> {
   const { data, error } = await supabase
     .from('casino_agents')
-    .select('id, name, chips, games_played, games_won, total_won')
-    .order('chips', { ascending: false })
-    .limit(limit);
+    .select('games_played, vpip_hands, pfr_hands, aggressive_actions, passive_actions, showdown_hands, showdown_wins, cbet_opportunities, cbet_made, best_win_streak, worst_loss_streak')
+    .eq('id', agentId)
+    .single();
+  if (error || !data) return null;
+  return {
+    handsPlayed:       data.games_played       ?? 0,
+    vpipHands:         data.vpip_hands         ?? 0,
+    pfrHands:          data.pfr_hands          ?? 0,
+    aggressiveActions: data.aggressive_actions ?? 0,
+    passiveActions:    data.passive_actions    ?? 0,
+    showdownHands:     data.showdown_hands     ?? 0,
+    showdownWins:      data.showdown_wins      ?? 0,
+    cbetOpportunities: data.cbet_opportunities ?? 0,
+    cbetMade:          data.cbet_made          ?? 0,
+    bestWinStreak:     data.best_win_streak    ?? 0,
+    worstLossStreak:   data.worst_loss_streak  ?? 0,
+  };
+}
 
-  if (error) { console.error('[casino-db] getLeaderboard:', error.message); return []; }
-  return data ?? [];
+/** Load all agents' poker stats on cold-start. Returns map keyed by agent_id. */
+export async function loadAllAgentStats(): Promise<Map<string, AgentStatsRow>> {
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .select('id, games_played, vpip_hands, pfr_hands, aggressive_actions, passive_actions, showdown_hands, showdown_wins, cbet_opportunities, cbet_made, best_win_streak, worst_loss_streak');
+  if (error) { console.error('[casino-db] loadAllAgentStats:', error.message); return new Map(); }
+  const map = new Map<string, AgentStatsRow>();
+  for (const r of data ?? []) {
+    map.set(r.id, {
+      handsPlayed:       r.games_played       ?? 0,
+      vpipHands:         r.vpip_hands         ?? 0,
+      pfrHands:          r.pfr_hands          ?? 0,
+      aggressiveActions: r.aggressive_actions ?? 0,
+      passiveActions:    r.passive_actions    ?? 0,
+      showdownHands:     r.showdown_hands     ?? 0,
+      showdownWins:      r.showdown_wins      ?? 0,
+      cbetOpportunities: r.cbet_opportunities ?? 0,
+      cbetMade:          r.cbet_made          ?? 0,
+      bestWinStreak:     r.best_win_streak    ?? 0,
+      worstLossStreak:   r.worst_loss_streak  ?? 0,
+    });
+  }
+  return map;
 }
 
 export async function getAgentHistory(agentId: string, limit = 20) {
@@ -273,4 +361,54 @@ export async function getAgentHistory(agentId: string, limit = 20) {
     chips_end:    row.chips_end,
     ended_at:     (row.casino_games as any)?.ended_at,
   }));
+}
+
+// ── Room Game State ──────────────────────────────────────────────────────────
+
+/** Persist the full GameState JSON after every action (fire-and-forget). */
+export function saveRoomState(roomId: string, game: unknown, stateVersion: number): void {
+  supabase.from('casino_room_state').upsert({
+    room_id:       roomId,
+    game_json:     game,
+    state_version: stateVersion,
+  }, { onConflict: 'room_id' }).then(({ error }) => {
+    if (error) console.error('[casino-db] saveRoomState:', error.message);
+  });
+}
+
+/** Delete persisted state when a room becomes empty. */
+export function deleteRoomState(roomId: string): void {
+  supabase.from('casino_room_state')
+    .delete().eq('room_id', roomId)
+    .then(({ error }) => {
+      if (error) console.error('[casino-db] deleteRoomState:', error.message);
+    });
+}
+
+/** Load one room's saved game state (for cross-instance recovery). */
+export async function loadRoomState(
+  roomId: string,
+): Promise<{ game: unknown; stateVersion: number } | null> {
+  const { data, error } = await supabase
+    .from('casino_room_state')
+    .select('game_json, state_version')
+    .eq('room_id', roomId)
+    .single();
+  if (error || !data) return null;
+  return { game: data.game_json, stateVersion: data.state_version ?? 0 };
+}
+
+/** Load ALL rooms' game states on cold-start hydration. */
+export async function loadAllRoomStates(): Promise<
+  Map<string, { game: unknown; stateVersion: number }>
+> {
+  const { data, error } = await supabase
+    .from('casino_room_state')
+    .select('room_id, game_json, state_version');
+  if (error) { console.error('[casino-db] loadAllRoomStates:', error.message); return new Map(); }
+  const map = new Map<string, { game: unknown; stateVersion: number }>();
+  for (const row of data ?? []) {
+    map.set(row.room_id, { game: row.game_json, stateVersion: row.state_version ?? 0 });
+  }
+  return map;
 }

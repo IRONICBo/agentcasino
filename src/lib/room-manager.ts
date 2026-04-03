@@ -1,8 +1,9 @@
 import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './types';
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
-import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers } from './casino-db';
+import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers, saveMessage, getRecentMessages, saveRoomState, deleteRoomState, loadAllRoomStates } from './casino-db';
 import { calculateEquity } from './equity';
+import { hydrateAgentStats } from './stats';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
 
@@ -89,7 +90,6 @@ interface ExtendedRoom extends Room {
   tableNumber: number;
   stateVersion: number;
   turnDeadlineMs: number | null;
-  chatLog: ChatMsg[];
 }
 
 const globalAny = globalThis as any;
@@ -157,7 +157,6 @@ function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom
     createdAt: Date.now(),
     stateVersion: 0,
     turnDeadlineMs: null,
-    chatLog: [],
   };
   rooms.set(room.id, room);
   return room;
@@ -251,6 +250,12 @@ function parseRoomId(id: string): { categoryId: string; tableNumber: number } | 
 }
 
 async function hydrateFromDB(): Promise<void> {
+  // Load persisted poker stats into in-memory agentStats map
+  await hydrateAgentStats();
+
+  // Restore active game states (runs in parallel with player hydration)
+  const roomStatesPromise = loadAllRoomStates();
+
   try {
     const allPlayers = await loadAllRoomPlayers();
     const now = Date.now();
@@ -292,6 +297,34 @@ async function hydrateFromDB(): Promise<void> {
   } catch (e) {
     console.error('[rooms] hydrateFromDB failed:', e);
   }
+
+  // Restore active game states (phase/cards/pot) from DB
+  try {
+    const roomStates = await roomStatesPromise;
+    for (const [rid, saved] of roomStates) {
+      const room = rooms.get(rid);
+      if (!room) continue;
+      const savedGame = saved.game as any;
+      if (!savedGame || !savedGame.phase || savedGame.phase === 'waiting') continue;
+      // Only restore if DB version is newer than what we already have in memory
+      if (saved.stateVersion <= room.stateVersion) continue;
+      // Strip internal metadata field before assigning to room.game
+      const { _turnDeadlineMs, ...gameState } = savedGame;
+      room.game = gameState;
+      room.stateVersion = saved.stateVersion;
+      // Restore turn deadline so cross-instance countdown is accurate
+      if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
+        room.turnDeadlineMs = _turnDeadlineMs;
+      }
+      console.log(`[rooms] Restored active game for ${rid} (phase=${savedGame.phase}, v${saved.stateVersion})`);
+      // Schedule turn timeout if a hand is in progress
+      if (savedGame.phase !== 'showdown') {
+        scheduleActionTimeout(rid);
+      }
+    }
+  } catch (e) {
+    console.error('[rooms] game state hydration failed:', e);
+  }
 }
 
 // ─── Lookup ───────────────────────────────────────────────────────────────────
@@ -312,7 +345,19 @@ export function getAgentRoom(agentId: string): string | null {
 
 export function bumpVersion(roomId: string): void {
   const room = rooms.get(roomId);
-  if (room) room.stateVersion = (room.stateVersion ?? 0) + 1;
+  if (!room) return;
+  room.stateVersion = (room.stateVersion ?? 0) + 1;
+  // Persist game state after every action so cross-instance polls and
+  // cold-start restarts always have the latest hand state.
+  // Include turnDeadlineMs so other instances can show the same countdown.
+  if (room.game) {
+    const snapshot = room.turnDeadlineMs
+      ? { ...room.game, _turnDeadlineMs: room.turnDeadlineMs }
+      : room.game;
+    saveRoomState(roomId, snapshot, room.stateVersion);
+  } else {
+    deleteRoomState(roomId);
+  }
 }
 
 export function getRoomStateVersion(roomId: string): number {
@@ -709,23 +754,19 @@ export function getValidActionsForRoom(roomId: string): ReturnType<typeof getVal
   return getValidActions(room.game);
 }
 
-// ─── In-memory Chat ──────────────────────────────────────────────────────────
-
-const MAX_CHAT_MSGS = 100;
+// ─── Chat (Supabase-backed for cross-instance persistence) ───────────────────
 
 export function addChatMessage(roomId: string, agentId: string, name: string, message: string): ChatMsg | null {
   const room = rooms.get(roomId);
   if (!room) return null;
   const msg: ChatMsg = { agentId, name, message, timestamp: Date.now() };
-  room.chatLog.push(msg);
-  if (room.chatLog.length > MAX_CHAT_MSGS) room.chatLog = room.chatLog.slice(-MAX_CHAT_MSGS);
+  // Persist to Supabase so all Vercel instances see the same chat history
+  saveMessage(roomId, agentId, name, message);
   return msg;
 }
 
-export function getChatMessages(roomId: string, limit = 50): ChatMsg[] {
-  const room = rooms.get(roomId);
-  if (!room) return [];
-  return room.chatLog.slice(-limit);
+export async function getChatMessages(roomId: string, limit = 50): Promise<ChatMsg[]> {
+  return getRecentMessages(roomId, limit);
 }
 
 /** Heartbeat — refresh updated_at in Supabase so the player isn't treated as stale */

@@ -76,7 +76,7 @@ export function DealerAvatar({ phase, hasWinners }: DealerAvatarProps) {
   const moodAnim: Record<DealerMood, { name: string; dur: string; dir: string }> = {
     idle:    { name: 'dealer-float',     dur: '3.5s', dir: 'alternate' },
     active:  { name: 'dealer-active',    dur: '1.4s', dir: 'alternate' },
-    excited: { name: 'dealer-excited',   dur: '0.35s', dir: 'alternate' },
+    excited: { name: 'dealer-excited',   dur: '0.65s', dir: 'alternate' },
     sleepy:  { name: 'dealer-sleepy',    dur: '5s',   dir: 'alternate' },
   };
   const ma = moodAnim[mood];
@@ -281,11 +281,11 @@ export function DealerAvatar({ phase, hasWinners }: DealerAvatarProps) {
           100% { transform: translateY(-12px) scaleY(1.04) scaleX(0.97) rotate(1.5deg); }
         }
         @keyframes dealer-excited {
-          0%   { transform: translateY(0px)  rotate(-4deg) scale(1.0); }
-          25%  { transform: translateY(-16px) rotate(4deg)  scale(1.06); }
-          50%  { transform: translateY(-6px)  rotate(-3deg) scale(1.02); }
-          75%  { transform: translateY(-20px) rotate(5deg)  scale(1.07); }
-          100% { transform: translateY(-10px) rotate(-2deg) scale(1.04); }
+          0%   { transform: translateY(0px)  rotate(-2deg) scale(1.0); }
+          25%  { transform: translateY(-8px)  rotate(2deg)  scale(1.03); }
+          50%  { transform: translateY(-3px)  rotate(-1deg) scale(1.01); }
+          75%  { transform: translateY(-10px) rotate(2deg)  scale(1.03); }
+          100% { transform: translateY(-5px)  rotate(-1deg) scale(1.02); }
         }
         @keyframes dealer-sleepy {
           0%   { transform: translateY(0px) rotate(0deg) scaleY(1); }

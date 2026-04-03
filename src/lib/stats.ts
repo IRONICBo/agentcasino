@@ -5,6 +5,7 @@
  */
 
 import type { PlayerAction } from './types';
+import { saveAgentStats, loadAllAgentStats, loadAgentStats } from './casino-db';
 
 // ---------------------------------------------------------------------------
 // Raw counters (persisted across hands)
@@ -208,6 +209,46 @@ export function trackHandEnd(
   }
 
   handTracking.delete(handId);
+
+  // Persist stats for every participant — fire-and-forget
+  for (const id of h.agentIds) {
+    const s = agentStats.get(id);
+    if (s) saveAgentStats(id, s);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cold-start hydration — load persisted stats from Supabase
+// ---------------------------------------------------------------------------
+
+export async function hydrateAgentStats(): Promise<void> {
+  try {
+    const rows = await loadAllAgentStats();
+    for (const [agentId, row] of rows) {
+      // Only overwrite if the in-memory count is lower (DB has more complete data)
+      const existing = agentStats.get(agentId);
+      if (!existing || row.handsPlayed > existing.handsPlayed) {
+        agentStats.set(agentId, {
+          handsPlayed:       row.handsPlayed,
+          vpipHands:         row.vpipHands,
+          pfrHands:          row.pfrHands,
+          aggressiveActions: row.aggressiveActions,
+          passiveActions:    row.passiveActions,
+          showdownHands:     row.showdownHands,
+          showdownWins:      row.showdownWins,
+          cbetOpportunities: row.cbetOpportunities,
+          cbetMade:          row.cbetMade,
+          // currentStreak is volatile — keep in-memory value if present, else 0
+          currentStreak:     existing?.currentStreak ?? 0,
+          bestWinStreak:     Math.max(row.bestWinStreak, existing?.bestWinStreak ?? 0),
+          worstLossStreak:   Math.max(row.worstLossStreak, existing?.worstLossStreak ?? 0),
+        });
+      }
+    }
+    console.log(`[stats] hydrated ${rows.size} agents from DB`);
+  } catch (e) {
+    console.error('[stats] hydrateAgentStats failed:', e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -242,8 +283,7 @@ function classifyStyle(vpip: number, af: number): string {
   return 'Calling Station';
 }
 
-export function getStats(agentId: string): ComputedStats {
-  const r = getOrCreate(agentId);
+function computeStats(agentId: string, r: AgentRawStats): ComputedStats {
   const vpip = pct(r.vpipHands, r.handsPlayed);
   const pfr = pct(r.pfrHands, r.handsPlayed);
   const af = r.passiveActions === 0
@@ -264,6 +304,32 @@ export function getStats(agentId: string): ComputedStats {
     worst_loss_streak: r.worstLossStreak,
     raw: { ...r },
   };
+}
+
+export function getStats(agentId: string): ComputedStats {
+  return computeStats(agentId, getOrCreate(agentId));
+}
+
+/**
+ * DB-authoritative version of getStats — reads persisted counters from Supabase
+ * and merges the volatile currentStreak from in-memory (not persisted).
+ * Use this in API handlers to avoid cross-instance staleness.
+ */
+export async function getStatsFromDB(agentId: string): Promise<ComputedStats> {
+  const dbRow = await loadAgentStats(agentId);
+  if (!dbRow) return getStats(agentId); // fallback to memory if no DB row
+
+  // Merge: use DB for all persistent counters; keep in-memory streak (volatile)
+  const inMem = agentStats.get(agentId);
+  const merged: AgentRawStats = {
+    ...dbRow,
+    currentStreak:   inMem?.currentStreak   ?? 0,
+    bestWinStreak:   Math.max(dbRow.bestWinStreak,  inMem?.bestWinStreak  ?? 0),
+    worstLossStreak: Math.max(dbRow.worstLossStreak, inMem?.worstLossStreak ?? 0),
+  };
+  // Update in-memory map so subsequent in-process calls are also accurate
+  agentStats.set(agentId, merged);
+  return computeStats(agentId, merged);
 }
 
 export function getAllStats(): ComputedStats[] {

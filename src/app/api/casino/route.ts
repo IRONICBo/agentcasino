@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateAgent, claimChips, getAgent, getChipBalance } from '@/lib/chips';
-import { recordGame } from '@/lib/casino-db';
+import { recordGame, getLeaderboard, loadRoomState } from '@/lib/casino-db';
 import {
   initDefaultRooms, listRooms, listRecommendedRooms, listCategories,
   joinRoom, leaveRoom,
@@ -28,7 +28,7 @@ import {
 import {
   getGamePlans, getActiveGamePlan, setGamePlan, getStrategyCatalog,
 } from '@/lib/game-plans';
-import { getStats, getAllStats } from '@/lib/stats';
+import { getStats, getAllStats, getStatsFromDB } from '@/lib/stats';
 import { listAgents } from '@/lib/chips';
 
 // Allow up to 15s for long-poll responses on Vercel
@@ -176,11 +176,13 @@ export async function GET(req: NextRequest) {
     }
 
     case 'history': {
-      if (!agentId) return err('Bearer token required. Login first.', 401);
+      // Allow public spectator reads via ?agent_id=; own history requires Bearer token
+      const historyTarget = agentId || paramAgentId;
+      if (!historyTarget) return err('Bearer token or agent_id required.', 401);
       const { getAgentHistory } = await import('@/lib/casino-db');
       const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '20'), 100);
-      const history = await getAgentHistory(agentId, limit);
-      return NextResponse.json({ agent_id: agentId, history });
+      const history = await getAgentHistory(historyTarget, limit);
+      return NextResponse.json({ agent_id: historyTarget, history });
     }
 
     case 'game_state': {
@@ -194,17 +196,46 @@ export async function GET(req: NextRequest) {
 
       // Long-poll: wait for a state change if ?since=N is provided
       const sinceParam = req.nextUrl.searchParams.get('since');
+      let pollTimedOutStale = false;
       if (sinceParam !== null) {
         const sinceVersion = parseInt(sinceParam, 10);
         if (!isNaN(sinceVersion)) {
           await waitForStateChange(roomId, sinceVersion, 8_000);
+          // If local stateVersion still matches sinceVersion after the wait, this instance
+          // may be stale — the action was processed on a different Vercel instance.
+          if (sinceVersion > 0 && room.stateVersion === sinceVersion) {
+            pollTimedOutStale = true;
+          }
         }
       }
 
-      // Auto-advance: if stuck in showdown with enough players, start next hand
+      // Cross-instance recovery: restore from DB when:
+      //   1. This instance has no active game, OR
+      //   2. Long-poll timed out without a local change (stale cross-instance state)
+      if (!room.game || (room.game.phase === 'waiting' && room.game.players.length === 0) || pollTimedOutStale) {
+        const saved = await loadRoomState(roomId);
+        if (saved?.game && saved.stateVersion > room.stateVersion) {
+          const { _turnDeadlineMs, ...g } = saved.game as any;
+          if (g.phase && g.phase !== 'waiting') {
+            room.game = g;
+            room.stateVersion = saved.stateVersion;
+            if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
+              room.turnDeadlineMs = _turnDeadlineMs;
+            }
+            if (g.phase !== 'showdown') scheduleActionTimeout(roomId);
+          }
+        }
+      }
+
+      // Auto-advance: showdown → next hand
       if (room.game?.phase === 'showdown' && room.game.players.length >= 2) {
         const advanced = tryStartNextHand(roomId);
         if (advanced) scheduleActionTimeout(roomId);
+      }
+      // Auto-start: waiting with 2+ players (handles cross-instance join race)
+      if (room.game?.phase === 'waiting' && room.game.players.length >= 2) {
+        const started = tryStartGame(roomId);
+        if (started) scheduleActionTimeout(roomId);
       }
 
       const state = getClientGameState(roomId, id);
@@ -230,11 +261,13 @@ export async function GET(req: NextRequest) {
     }
 
     case 'stats': {
+      await waitForHydration();
       const sid = agentId || paramAgentId;
       if (sid) {
-        return NextResponse.json(getStats(sid));
+        // Read from DB for cross-instance accuracy; volatile currentStreak merged from memory
+        return NextResponse.json(await getStatsFromDB(sid));
       }
-      // No agent_id → return leaderboard-style stats for all agents
+      // No agent_id → in-memory bulk list (leaderboard merges DB anyway)
       return NextResponse.json({ agents: getAllStats() });
     }
 
@@ -242,16 +275,46 @@ export async function GET(req: NextRequest) {
       const rid = req.nextUrl.searchParams.get('room_id');
       if (!rid) return err('room_id required');
       const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '50'), 100);
-      return NextResponse.json({ messages: getChatMessages(rid, limit) });
+      return NextResponse.json({ messages: await getChatMessages(rid, limit) });
     }
 
     case 'leaderboard': {
-      const agents = listAgents();
-      const board = agents
-        .sort((a, b) => b.chips - a.chips)
-        .slice(0, 50)
-        .map((a, i) => ({ rank: i + 1, agent_id: a.id, name: a.name, chips: a.chips }));
-      return NextResponse.json({ leaderboard: board, total: agents.length });
+      // All data read directly from Supabase — no in-memory stats dependency
+      const dbBoard = await getLeaderboard(50);
+
+      function pctDB(n: number, d: number) { return d > 0 ? Math.round((n / d) * 1000) / 10 : 0; }
+      function afDB(agg: number, pas: number) {
+        if (pas === 0) return agg > 0 ? 99 : 0;
+        return Math.round((agg / pas) * 100) / 100;
+      }
+
+      const board = dbBoard.map((a: any, i: number) => {
+        const hands   = a.games_played ?? 0;
+        const vpipH   = a.vpip_hands   ?? 0;
+        const pfrH    = a.pfr_hands    ?? 0;
+        const aggAct  = a.aggressive_actions ?? 0;
+        const pasAct  = a.passive_actions    ?? 0;
+        const sdH     = a.showdown_hands  ?? 0;
+        const sdW     = a.showdown_wins   ?? 0;
+        // Only show computed stats if agent has actual tracking data
+        const hasStats = vpipH > 0 || aggAct > 0 || sdH > 0;
+        return {
+          rank:      i + 1,
+          agent_id:  a.id,
+          name:      a.name,
+          chips:     a.chips,
+          hands,
+          games_won: a.games_won ?? 0,
+          vpip:      hasStats ? pctDB(vpipH,  hands) : null,
+          pfr:       hasStats ? pctDB(pfrH,   hands) : null,
+          af:        hasStats ? afDB(aggAct, pasAct)  : null,
+          wtsd:      hasStats ? pctDB(sdH,   hands)  : null,
+          wsd:       hasStats ? pctDB(sdW,   sdH)    : null,
+        };
+      });
+      board.sort((a: any, b: any) => b.chips - a.chips);
+      board.forEach((e: any, i: number) => { e.rank = i + 1; });
+      return NextResponse.json({ leaderboard: board, total: board.length });
     }
 
     case 'game_plan': {
