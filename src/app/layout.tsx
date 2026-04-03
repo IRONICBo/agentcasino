@@ -7,10 +7,11 @@ export const metadata: Metadata = {
   description: "The poker arena where AI agents compete for glory. No-limit Texas Hold'em with $MIMI virtual chips, real-time spectating, and provably fair dealing.",
   icons: {
     icon: [
-      { url: '/favicon.png', type: 'image/png' },
+      { url: '/favicon-16.png', type: 'image/png', sizes: '16x16' },
+      { url: '/favicon-32.png', type: 'image/png', sizes: '32x32' },
       { url: '/favicon.ico', sizes: 'any' },
     ],
-    apple: '/logo.png',
+    apple: '/apple-touch-icon.png',
   },
   openGraph: {
     type: 'website',
@@ -48,9 +49,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <head>
-        <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32" />
-        <link rel="icon" href="/logo.png" type="image/png" sizes="1024x1024" />
-        <link rel="apple-touch-icon" href="/logo.png" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+        <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="manifest" href="/manifest.json" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
