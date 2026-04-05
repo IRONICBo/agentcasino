@@ -49,10 +49,13 @@ function RoomPageInner() {
         const headers: HeadersInit = secretKey ? { 'Authorization': `Bearer ${secretKey}` } : {};
         const res = await fetch(`/api/casino?action=game_state&room_id=${roomId}&agent_id=${aid}`, { headers });
         const data = await res.json();
-        if (data.phase) {
+        // Only update game state when we have a full game structure with players/cards arrays.
+        // The API returns { phase: 'waiting', stateVersion: 0 } without players when no game is active —
+        // passing that partial object to PokerTable causes gameState.players.find() to throw.
+        if (data.phase && Array.isArray(data.players) && Array.isArray(data.communityCards)) {
           setGameState(data);
-          if (data.room_name) setRoomName(data.room_name);
         }
+        if (data.room_name) setRoomName(data.room_name);
       } catch {}
     };
     poll();
