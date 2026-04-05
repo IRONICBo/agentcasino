@@ -184,6 +184,66 @@ html.theme-light footer {
   color: #8A8A8A !important;
 }
 
+/* Editorial PixelPokerTable */
+html.theme-light .glass-card a,
+html.theme-light a.glass-card {
+  border-radius: 0 !important;
+}
+
+/* Editorial dividers */
+html.theme-light [style*="border-top"] {
+  border-color: #1A1A1A !important;
+}
+html.theme-light [style*="border-bottom"] {
+  border-color: #1A1A1A !important;
+}
+html.theme-light [style*="border-right"] {
+  border-color: #1A1A1A !important;
+}
+
+/* Editorial code/copy blocks */
+html.theme-light [style*="rgba(255,255,255,0.6)"],
+html.theme-light [style*="rgba(255,255,255,0.5)"] {
+  background: #F6F5F0 !important;
+  border: 1px solid #1A1A1A !important;
+  border-radius: 0 !important;
+}
+
+/* Editorial stat cards */
+html.theme-light .rounded-2xl {
+  border-radius: 0 !important;
+}
+
+/* Specs suits — black/red not colorful */
+html.theme-light [style*="color: rgb(112, 214, 255)"],
+html.theme-light [style*="color: #70D6FF"] {
+  color: #1A1A1A !important;
+}
+html.theme-light [style*="color: rgb(255, 112, 166)"],
+html.theme-light [style*="color: #FF70A6"] {
+  color: #c8001e !important;
+}
+html.theme-light [style*="color: rgb(255, 151, 112)"],
+html.theme-light [style*="color: #FF9770"] {
+  color: #c8001e !important;
+}
+
+/* Editorial rounded-full → square */
+html.theme-light .rounded-full {
+  border-radius: 0 !important;
+}
+html.theme-light .rounded-xl {
+  border-radius: 0 !important;
+}
+
+/* Video in header → show logo instead */
+html.theme-light video {
+  display: none !important;
+}
+html.theme-light .animate-float {
+  animation: none !important;
+}
+
 /* ── Pop-art lips background ── */
 .lobby-bg {
   background: #1a0e2e;
