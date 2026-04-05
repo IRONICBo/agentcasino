@@ -4,7 +4,7 @@ import { deductChips, addChips, getAgent } from './chips';
 import {
   loadRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS,
   cleanStaleRoomPlayers, saveRoomState, deleteRoomState,
-  loadRoomState, saveRoomStateWithVersion, deductChipsAtomic, addChipsAtomic,
+  loadRoomState, loadAllRoomStates, saveRoomStateWithVersion, deductChipsAtomic, addChipsAtomic,
   loadAllRoomPlayers,
 } from './casino-db';
 import { calculateEquity } from './equity';
@@ -662,7 +662,10 @@ function toRoomInfo(room: ExtendedRoom, playerCount: number): RoomInfo {
 }
 
 export async function listRooms(): Promise<RoomInfo[]> {
-  const allPlayers = await loadAllRoomPlayers();
+  const [allPlayers, allStates] = await Promise.all([
+    loadAllRoomPlayers(),
+    loadAllRoomStates(),
+  ]);
   const playersByRoom = new Map<string, number>();
   for (const p of allPlayers) {
     playersByRoom.set(p.roomId, (playersByRoom.get(p.roomId) ?? 0) + 1);
@@ -673,11 +676,17 @@ export async function listRooms(): Promise<RoomInfo[]> {
   for (const cat of STAKE_CATEGORIES) {
     const minCount = MIN_TABLES[cat.id] ?? 1;
 
-    // Collect all table numbers: minimum + any with players
+    // Collect all table numbers: minimum + any with players or active games
     const tableNumbers = new Set<number>();
     for (let i = 1; i <= minCount; i++) tableNumbers.add(i);
     for (const p of allPlayers) {
       const parsed = parseRoomId(p.roomId);
+      if (parsed && parsed.categoryId === cat.id) {
+        tableNumbers.add(parsed.tableNumber);
+      }
+    }
+    for (const [rid] of allStates) {
+      const parsed = parseRoomId(rid);
       if (parsed && parsed.categoryId === cat.id) {
         tableNumbers.add(parsed.tableNumber);
       }
@@ -696,7 +705,9 @@ export async function listRooms(): Promise<RoomInfo[]> {
         shell.stateVersion = saved.stateVersion;
       }
 
-      rooms.push(toRoomInfo(shell, count));
+      // Use game_json player count as fallback if casino_room_players is empty
+      const gamePlayerCount = shell.game?.players?.length ?? 0;
+      rooms.push(toRoomInfo(shell, Math.max(count, gamePlayerCount)));
     }
   }
 
