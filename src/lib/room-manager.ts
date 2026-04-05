@@ -465,10 +465,18 @@ export async function evictGhostPlayers(): Promise<number> {
       const dbRow = dbMap.get(p.agentId);
       // Evict if: not in DB at all, OR DB row is stale (no heartbeat within STALE_MS)
       if (!dbRow || (now - dbRow.updatedAt) >= STALE_MS) {
-        removePlayer(room.game, p.agentId);
-        if (dbRow) removeRoomPlayer(room.id, p.agentId); // also clean the DB row
+        const evictedPlayer = removePlayer(room.game, p.agentId);
+        // Return chips on eviction — same as voluntary leave
+        if (evictedPlayer) {
+          const totalReturn = evictedPlayer.chips + evictedPlayer.currentBet;
+          if (totalReturn > 0) {
+            addChips(p.agentId, totalReturn);
+            room.game.pot = Math.max(0, room.game.pot - evictedPlayer.currentBet);
+          }
+        }
+        if (dbRow) removeRoomPlayer(room.id, p.agentId);
         evicted++;
-        console.log(`[rooms] evicted ghost player ${p.agentId} from ${room.id} (${dbRow ? 'stale' : 'missing'})`);
+        console.log(`[rooms] evicted ghost player ${p.agentId} from ${room.id} (${dbRow ? 'stale' : 'missing'}) — returned ${evictedPlayer?.chips ?? 0} chips`);
       }
     }
     if (room.game.players.length === 0) room.game = null;
