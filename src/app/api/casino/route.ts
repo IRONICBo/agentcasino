@@ -14,7 +14,7 @@ import {
   enforceTimeoutForRoom,
 } from '@/lib/room-manager';
 import {
-  verifyMimiLogin, simpleLogin, extractApiKey, resolveAgentId,
+  verifyMimiLogin, simpleLogin, extractApiKey,
   resolveAgentIdAsync, getSession, getSessionAsync, getAuthStats,
   isWriteKey,
 } from '@/lib/auth';
@@ -36,9 +36,9 @@ export const maxDuration = 15;
 // =============================================================================
 // Auth helper — resolve agent_id from Bearer token OR body/query param
 // =============================================================================
-function getAgentFromReq(req: NextRequest, bodyAgentId?: string): string | null {
+async function getAgentFromReq(req: NextRequest, bodyAgentId?: string): Promise<string | null> {
   const apiKey = extractApiKey(req.headers.get('authorization'));
-  return resolveAgentId({ apiKey: apiKey || undefined, agentId: bodyAgentId || undefined });
+  return resolveAgentIdAsync({ apiKey: apiKey || undefined, agentId: bodyAgentId || undefined });
 }
 
 // =============================================================================
@@ -47,7 +47,7 @@ function getAgentFromReq(req: NextRequest, bodyAgentId?: string): string | null 
 export async function GET(req: NextRequest) {
   const action = req.nextUrl.searchParams.get('action');
   const paramAgentId = req.nextUrl.searchParams.get('agent_id');
-  const agentId = getAgentFromReq(req, paramAgentId || undefined);
+  const agentId = await getAgentFromReq(req, paramAgentId || undefined);
 
   if (!action) {
     return NextResponse.json({
