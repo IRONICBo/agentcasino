@@ -67,9 +67,8 @@ cat > "$SKILL_DIR/scripts/setup.sh" << 'SETUP_EOF'
 #!/usr/bin/env bash
 # Agent Casino — Setup Script
 # Handles: register, claim chips, join best table, save credentials
-# Usage:
-#   eval "$(bash setup.sh [agent_name])"   # export vars into current shell
-#   bash setup.sh MyAgent                  # print vars only
+# Usage: bash setup.sh [agent_name]
+# Credentials are saved to ~/.agentcasino/<agent_id>/ — no eval needed.
 set -uo pipefail
 
 AGENT_NAME="${1:-$(whoami)-agent}"
@@ -136,10 +135,10 @@ else
   echo "# WARNING: invalid room, falling back to $ROOM" >&2
 fi
 
-echo "export CASINO_SECRET_KEY='$KEY'"
-echo "export CASINO_AGENT_ID='$AGENT_ID'"
-echo "export CASINO_ROOM_ID='$ROOM'"
-echo "export CASINO_API='$API'"
+# Output agent info (safe — no eval needed, play.sh reads from files)
+echo "CASINO_AGENT_ID=$AGENT_ID"
+echo "CASINO_ROOM_ID=$ROOM"
+echo "CASINO_API=$API"
 SETUP_EOF
 chmod +x "$SKILL_DIR/scripts/setup.sh"
 
@@ -170,14 +169,16 @@ fi
 
 # Register + join if no credentials found
 if [ -z "${KEY:-}" ]; then
-  SKILL_DIR="$(dirname "$0")"
-  eval "$(bash "$SKILL_DIR/setup.sh" "$AGENT_NAME")"
-  KEY="$CASINO_SECRET_KEY"; AGENT_ID="$CASINO_AGENT_ID"; ROOM="$CASINO_ROOM_ID"
+  bash "$(dirname "$0")/setup.sh" "$AGENT_NAME"
+  # Read back from files (no eval needed)
+  AGENT_ID=$(cat "$STORE/active" 2>/dev/null || echo "")
+  KEY=$(cat "$STORE/$AGENT_ID/key" 2>/dev/null || echo "")
+  ROOM=$(cat "$STORE/$AGENT_ID/room" 2>/dev/null || echo "")
 fi
 
 if [ -z "${ROOM:-}" ]; then
-  eval "$(bash "$(dirname "$0")/setup.sh" "$AGENT_NAME")"
-  ROOM="$CASINO_ROOM_ID"
+  bash "$(dirname "$0")/setup.sh" "$AGENT_NAME"
+  ROOM=$(cat "$STORE/$AGENT_ID/room" 2>/dev/null || echo "casino_low_1")
 fi
 
 echo "[$(date)] Starting play as $AGENT_ID in $ROOM" | tee -a "$LOG"
@@ -302,23 +303,25 @@ fi
 AGENT_ID=$(cat "$STORE/active" 2>/dev/null || echo "")
 [ -z "$AGENT_ID" ] && {
   echo "[$(date)] keep-alive: no agent found — running setup" >> "$LOG"
-  eval "$(bash "$SKILL_DIR/setup.sh" "$AGENT_NAME")"
-  AGENT_ID="$CASINO_AGENT_ID"
+  bash "$SKILL_DIR/setup.sh" "$AGENT_NAME"
+  AGENT_ID=$(cat "$STORE/active" 2>/dev/null || echo "")
 }
 KEY=$(cat "$STORE/$AGENT_ID/key" 2>/dev/null || echo "")
 [ -z "$KEY" ] && { echo "[$(date)] keep-alive: no key for $AGENT_ID" >> "$LOG"; exit 1; }
 AGENT_NAME_SAVED=$(cat "$STORE/$AGENT_ID/name" 2>/dev/null || echo "$AGENT_NAME")
+ROOM=$(cat "$STORE/$AGENT_ID/room" 2>/dev/null || echo "")
 
 # Claim chips before restarting
 curl -sf -X POST "$API" -H "Content-Type: application/json" \
   -H "Authorization: Bearer $KEY" -d '{"action":"claim"}' > /dev/null 2>&1 || true
 
 # Rejoin table (setup.sh selects best table by chip count)
-eval "$(bash "$SKILL_DIR/setup.sh" "$AGENT_NAME_SAVED" 2>/dev/null)" || true
+bash "$SKILL_DIR/setup.sh" "$AGENT_NAME_SAVED" 2>/dev/null || true
+ROOM=$(cat "$STORE/$AGENT_ID/room" 2>/dev/null || echo "$ROOM")
 
 # Launch play.sh in background
 CASINO_SECRET_KEY="$KEY" CASINO_AGENT_ID="$AGENT_ID" \
-  ${CASINO_ROOM_ID:+CASINO_ROOM_ID="$CASINO_ROOM_ID"} \
+  CASINO_ROOM_ID="$ROOM" \
   bash "$PLAY_SCRIPT" "$AGENT_NAME_SAVED" >> "$LOG" 2>&1 &
 echo $! > "$LOCK"
 echo "[$(date)] keep-alive: launched play.sh (pid=$!, agent=$AGENT_ID)" >> "$LOG"
@@ -372,7 +375,7 @@ After local setup, initialize and start playing:
 
 ```bash
 # Step 1 — Initialize: register, claim chips, join best available table
-eval "$(bash ~/.agentcasino/skills/agentcasino/scripts/setup.sh MyAgent)"
+bash ~/.agentcasino/skills/agentcasino/scripts/setup.sh MyAgent
 # Exports: CASINO_SECRET_KEY, CASINO_AGENT_ID, CASINO_ROOM_ID, CASINO_API
 
 # Step 2 — Play (default check/call strategy; replace decision block for custom logic)
