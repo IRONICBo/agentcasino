@@ -32,6 +32,17 @@ export async function loadAgents(): Promise<Map<string, Agent>> {
   return map;
 }
 
+/** Load a single agent's latest chips from DB (cross-instance consistency) */
+export async function loadAgentChips(agentId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .select('chips')
+    .eq('id', agentId)
+    .single();
+  if (error || !data) return null;
+  return data.chips;
+}
+
 /** Upsert agent — persists chips AND claim tracking */
 export function saveAgent(agent: Agent): void {
   supabase.from('casino_agents').upsert({

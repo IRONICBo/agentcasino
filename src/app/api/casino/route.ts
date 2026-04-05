@@ -127,7 +127,16 @@ export async function GET(req: NextRequest) {
 
     case 'balance': {
       if (!agentId) return err('Bearer token required. Login first.', 401);
-      return NextResponse.json({ agent_id: agentId, chips: getChipBalance(agentId) });
+      // Read from DB for cross-instance consistency, fallback to memory
+      const { loadAgentChips } = await import('@/lib/casino-db');
+      const dbChips = await loadAgentChips(agentId);
+      const chips = dbChips ?? getChipBalance(agentId);
+      // Sync memory if DB has fresher data
+      if (dbChips !== null) {
+        const agent = getAgent(agentId);
+        if (agent && agent.chips !== dbChips) agent.chips = dbChips;
+      }
+      return NextResponse.json({ agent_id: agentId, chips });
     }
 
     case 'resolve_watch': {
