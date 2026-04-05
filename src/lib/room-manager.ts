@@ -4,6 +4,7 @@ import { deductChips, addChips, getAgent } from './chips';
 import {
   saveRoomState, deleteRoomState,
   loadRoomState, loadAllRoomStates, saveRoomStateWithVersion, deductChipsAtomic, addChipsAtomic,
+  saveAllHoleCards, loadHoleCards, loadAllHoleCards, deleteHandCards,
 } from './casino-db';
 import { calculateEquity } from './equity';
 
@@ -191,6 +192,15 @@ async function loadRoom(roomId: string): Promise<ExtendedRoom | null> {
       if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
         room.turnDeadlineMs = _turnDeadlineMs;
       }
+
+      // Restore hole cards from per-agent table (stripped from game_json for security)
+      const restoredGame = room.game!;
+      if (restoredGame.id && restoredGame.players?.length > 0) {
+        const allCards = await loadAllHoleCards(restoredGame.id);
+        for (const p of restoredGame.players) {
+          p.holeCards = allCards[p.agentId] ?? [];
+        }
+      }
     } else if (savedGame.phase === 'waiting') {
       // Restore waiting state with players
       const { _turnDeadlineMs, _timeoutCounts, _nextHandAt, ...gameState } = savedGame;
@@ -222,8 +232,11 @@ async function saveWithRetry(
       return { success: true, room };
     }
 
-    // Build snapshot with metadata
+    // Build snapshot with metadata — strip hole cards (they live in casino_hand_cards)
     const snapshot: any = { ...result.game };
+    if (snapshot.players) {
+      snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
+    }
     if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
 
     const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
@@ -307,8 +320,11 @@ export async function enforceTimeoutForRoom(roomId: string): Promise<void> {
   let changed = await enforceTimeout(room);
   // Might need multiple consecutive timeouts if multiple players timed out
   while (changed) {
-    // Save intermediate state
+    // Save intermediate state — strip hole cards
     const snapshot: any = { ...room.game };
+    if (snapshot.players) {
+      snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
+    }
     if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
     const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
     if (saveResult.success) {
@@ -398,11 +414,14 @@ export async function leaveRoom(roomId: string, agentId: string): Promise<void> 
   room.spectators = room.spectators.filter(id => id !== agentId);
   // Player removed from game_json via saveWithRetry above
 
-  // Save updated state
+  // Save updated state — strip hole cards
   if (room.game.players.length === 0) {
     await deleteRoomState(roomId);
   } else {
     const snapshot: any = { ...room.game };
+    if (snapshot.players) {
+      snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
+    }
     await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
   }
 }
@@ -463,12 +482,35 @@ export async function handleAction(
   return null;
 }
 
+/**
+ * After startNewHand() deals cards into players[].holeCards,
+ * persist them to casino_hand_cards and strip from the game blob
+ * so they never appear in the shared game_json.
+ */
+async function isolateHoleCards(game: GameState, roomId: string): Promise<void> {
+  const handId = game.id;
+  const playersWithCards = game.players
+    .filter(p => p.holeCards.length === 2)
+    .map(p => ({ agentId: p.agentId, holeCards: [...p.holeCards] }));
+
+  // Save to per-agent table
+  await saveAllHoleCards(handId, roomId, playersWithCards);
+
+  // Strip from shared game state — cards now only live in casino_hand_cards
+  for (const p of game.players) {
+    p.holeCards = [];
+  }
+}
+
 export async function tryStartGame(roomId: string): Promise<boolean> {
   const result = await saveWithRetry(roomId, async (room) => {
     if (!room.game) return { game: null, error: 'no game' };
     if (!canStartGame(room.game)) return { game: null, error: 'cannot start' };
 
     startNewHand(room.game, roomId, room.name);
+
+    // Isolate hole cards to per-agent table before saving game_json
+    await isolateHoleCards(room.game, roomId);
 
     // Set turn deadline
     room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
@@ -508,7 +550,14 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
 
     if (room.game.players.length < 2) return { game: null, error: 'not enough players after bust' };
 
+    // Clean up previous hand's cards
+    const prevHandId = room.game.id;
+    if (prevHandId) deleteHandCards(prevHandId);
+
     startNewHand(room.game);
+
+    // Isolate hole cards to per-agent table before saving game_json
+    await isolateHoleCards(room.game, roomId);
 
     // Set turn deadline
     room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
@@ -728,6 +777,10 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
   let changed = await enforceTimeout(room);
   while (changed) {
     const snapshot: any = { ...room.game };
+    // Strip hole cards from snapshot (they live in casino_hand_cards)
+    if (snapshot.players) {
+      snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
+    }
     if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
     const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
     if (saveResult.success) room.stateVersion = saveResult.newVersion;
@@ -737,37 +790,74 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
   const game = room.game;
   if (!game) return null;
 
+  const isSpectator = !viewerAgentId || viewerAgentId === '__spectator__';
   const isShowdown = game.phase === 'showdown';
+  const handId = game.id;
 
-  // Calculate win probabilities
-  const showEquity = game.phase !== 'waiting' && game.phase !== 'showdown' && game.players.some(p => p.holeCards.length === 2);
-  let equity: Map<string, number> | null = null;
-  if (showEquity) {
-    const cached = equityCache.get(roomId);
-    if (cached && cached.version === room.stateVersion) {
-      equity = cached.equity;
-    } else {
-      equity = calculateEquity(
-        game.players.map(p => ({ agentId: p.agentId, holeCards: p.holeCards, hasFolded: p.hasFolded })),
-        game.communityCards,
-      );
-      equityCache.set(roomId, { version: room.stateVersion, equity });
+  // ── Load hole cards from per-agent table ──
+  // Spectator + showdown: load all; Agent: load only own
+  let holeCardsByAgent: Record<string, import('./types').Card[]> = {};
+  if (handId && game.phase !== 'waiting') {
+    if (isSpectator || isShowdown) {
+      holeCardsByAgent = await loadAllHoleCards(handId);
+    } else if (viewerAgentId) {
+      const myCards = await loadHoleCards(handId, viewerAgentId);
+      if (myCards) holeCardsByAgent[viewerAgentId] = myCards;
     }
   }
 
-  const players: ClientPlayer[] = game.players.map(p => ({
-    agentId: p.agentId,
-    name: p.name,
-    seatIndex: p.seatIndex,
-    chips: p.chips,
-    holeCards: p.holeCards,
-    currentBet: p.currentBet,
-    hasFolded: p.hasFolded,
-    hasActed: p.hasActed,
-    isAllIn: p.isAllIn,
-    isConnected: p.isConnected,
-    winProbability: equity?.get(p.agentId) ?? null,
-  }));
+  // ── Equity: only for spectators (agents think for themselves) ──
+  let equity: Map<string, number> | null = null;
+  if (isSpectator && game.phase !== 'waiting' && game.phase !== 'showdown') {
+    const allCards = holeCardsByAgent;
+    const hasCards = Object.values(allCards).some(c => c.length === 2);
+    if (hasCards) {
+      const cached = equityCache.get(roomId);
+      if (cached && cached.version === room.stateVersion) {
+        equity = cached.equity;
+      } else {
+        equity = calculateEquity(
+          game.players.map(p => ({
+            agentId: p.agentId,
+            holeCards: allCards[p.agentId] ?? [],
+            hasFolded: p.hasFolded,
+          })),
+          game.communityCards,
+        );
+        equityCache.set(roomId, { version: room.stateVersion, equity });
+      }
+    }
+  }
+
+  // ── Build client players with filtered hole cards ──
+  const players: ClientPlayer[] = game.players.map(p => {
+    let cards: import('./types').Card[] | null = null;
+
+    if (isSpectator) {
+      // Spectator sees all cards
+      cards = holeCardsByAgent[p.agentId] ?? null;
+    } else if (isShowdown && !p.hasFolded) {
+      // Showdown: reveal non-folded players' cards to everyone
+      cards = holeCardsByAgent[p.agentId] ?? null;
+    } else if (p.agentId === viewerAgentId) {
+      // Agent sees only own cards
+      cards = holeCardsByAgent[p.agentId] ?? null;
+    }
+
+    return {
+      agentId: p.agentId,
+      name: p.name,
+      seatIndex: p.seatIndex,
+      chips: p.chips,
+      holeCards: cards,
+      currentBet: p.currentBet,
+      hasFolded: p.hasFolded,
+      hasActed: p.hasActed,
+      isAllIn: p.isAllIn,
+      isConnected: p.isConnected,
+      winProbability: isSpectator ? (equity?.get(p.agentId) ?? null) : null,
+    };
+  });
 
   const now = Date.now();
   const deadline = room.turnDeadlineMs ?? null;
@@ -807,7 +897,11 @@ export async function heartbeatPlayer(roomId: string, agentId: string): Promise<
   if (!room?.game) return false;
   const hasPlayer = room.game.players.some((p: any) => p.agentId === agentId);
   if (!hasPlayer) return false;
-  // Re-save current state to refresh updated_at
-  await saveRoomState(roomId, room.game, room.stateVersion);
+  // Re-save current state to refresh updated_at — strip hole cards
+  const hbSnapshot: any = { ...room.game };
+  if (hbSnapshot.players) {
+    hbSnapshot.players = hbSnapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
+  }
+  await saveRoomState(roomId, hbSnapshot, room.stateVersion);
   return true;
 }

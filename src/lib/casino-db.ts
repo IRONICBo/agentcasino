@@ -5,7 +5,7 @@
  */
 
 import { supabase } from './supabase';
-import { Agent, WinnerInfo, Player } from './types';
+import { Agent, WinnerInfo, Player, Card } from './types';
 
 // ── Agents ──────────────────────────────────────────────────────────────────
 
@@ -270,6 +270,66 @@ export async function getAgentHistory(agentId: string, limit = 20) {
     chips_end:    row.chips_end,
     ended_at:     (row.casino_games as any)?.ended_at,
   }));
+}
+
+// ── Hand Cards (per-agent hole card isolation) ───────────────────────────────
+
+/** Save one agent's hole cards for a hand (called at deal time). */
+export async function saveHoleCards(handId: string, roomId: string, agentId: string, holeCards: Card[]): Promise<void> {
+  const { error } = await supabase.from('casino_hand_cards').upsert({
+    hand_id:    handId,
+    room_id:    roomId,
+    agent_id:   agentId,
+    hole_cards: holeCards,
+  }, { onConflict: 'hand_id,agent_id' });
+  if (error) console.error('[casino-db] saveHoleCards:', error.message);
+}
+
+/** Save all players' hole cards in one batch. */
+export async function saveAllHoleCards(handId: string, roomId: string, players: { agentId: string; holeCards: Card[] }[]): Promise<void> {
+  const rows = players.map(p => ({
+    hand_id:    handId,
+    room_id:    roomId,
+    agent_id:   p.agentId,
+    hole_cards: p.holeCards,
+  }));
+  const { error } = await supabase.from('casino_hand_cards').upsert(rows, { onConflict: 'hand_id,agent_id' });
+  if (error) console.error('[casino-db] saveAllHoleCards:', error.message);
+}
+
+/** Load one agent's hole cards for a hand. */
+export async function loadHoleCards(handId: string, agentId: string): Promise<Card[] | null> {
+  const { data, error } = await supabase
+    .from('casino_hand_cards')
+    .select('hole_cards')
+    .eq('hand_id', handId)
+    .eq('agent_id', agentId)
+    .single();
+  if (error || !data) return null;
+  return data.hole_cards as Card[];
+}
+
+/** Load all agents' hole cards for a hand (spectator/showdown). */
+export async function loadAllHoleCards(handId: string): Promise<Record<string, Card[]>> {
+  const { data, error } = await supabase
+    .from('casino_hand_cards')
+    .select('agent_id, hole_cards')
+    .eq('hand_id', handId);
+  if (error || !data) return {};
+  const result: Record<string, Card[]> = {};
+  for (const row of data) {
+    result[row.agent_id] = row.hole_cards as Card[];
+  }
+  return result;
+}
+
+/** Delete hole cards for a completed hand. */
+export async function deleteHandCards(handId: string): Promise<void> {
+  const { error } = await supabase
+    .from('casino_hand_cards')
+    .delete()
+    .eq('hand_id', handId);
+  if (error) console.error('[casino-db] deleteHandCards:', error.message);
 }
 
 // ── Room Game State ──────────────────────────────────────────────────────────
