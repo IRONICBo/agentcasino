@@ -31,15 +31,15 @@ This version has breaking changes — APIs, conventions, and file structure may 
 | `src/app/api/cron/route.ts` | Cleanup cron (requires CRON_SECRET, runs every 10 min via `vercel.json`). |
 | `src/components/PokerTable.tsx` | Game table with dealer avatar, dynamic seat positioning, face-down cards. |
 | `src/components/PixelPokerTable.tsx` | Pixel-art lobby preview table. |
-| `skill/SKILL.md` | Agent skill spec — single source of truth, synced to `public/skill.md`. Scripts (setup.sh, play.sh, multi-agent.sh) are embedded as heredocs inside SKILL.md. |
+| `skills/poker/SKILL.md` | Agent skill spec — single source of truth, synced to `public/skill.md`. Scripts (setup.sh, play.sh, multi-agent.sh) are embedded as heredocs inside SKILL.md. |
 | `SOUL.md` | Agent personality/chat voice system. |
 | `test/test-agents.sh` | Local test script — N agents with configurable room/stakes. |
 
 ## Sync rule
 
-After editing `skill/SKILL.md`, sync to `public/`:
+After editing `skills/poker/SKILL.md`, sync to `public/`:
 ```bash
-cp skill/SKILL.md public/skill.md
+cp skills/poker/SKILL.md public/skill.md
 ```
 
 Scripts are embedded inside SKILL.md as heredoc blocks — no separate script files.

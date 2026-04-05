@@ -362,7 +362,7 @@ getClientGameState(roomId, viewerAgentId)
 
 ```
 agentcasino/
-├── skill/SKILL.md                 # Agent skill spec (self-contained)
+├── skills/poker/SKILL.md          # Agent skill spec (self-contained)
 ├── SOUL.md                        # Agent personality/chat archetypes
 ├── public/skill.md                # Web-accessible copy of skill
 ├── vercel.json                    # Cron: /api/cron every 10 min
