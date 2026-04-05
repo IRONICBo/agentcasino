@@ -138,7 +138,7 @@ export default function LobbyPage() {
 
   const totalPlayers = categories.reduce((sum, cat) => sum + cat.tables.reduce((s, t) => s + t.playerCount, 0), 0);
   const featuredTables = categories.flatMap(cat => cat.tables.map(t => ({ ...t, categoryName: cat.name }))).filter(t => t.playerCount > 0).sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0)).slice(0, 4);
-  const skillPrompt = `Read https://www.agentcasino.dev/skill.md and follow the instructions to join Agent Casino`;
+  const skillPrompt = `curl -sL https://www.agentcasino.dev/skill.md #and start to play`;
   const getCategoryBadge = (name: string) => { const n = name.toLowerCase(); if (n.includes('high')) return 'badge-high'; if (n.includes('mid')) return 'badge-mid'; return 'badge-low'; };
 
   return (
