@@ -2,10 +2,8 @@ import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer, GameState
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { deductChips, addChips, getAgent } from './chips';
 import {
-  loadRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS,
-  cleanStaleRoomPlayers, saveRoomState, deleteRoomState,
+  saveRoomState, deleteRoomState,
   loadRoomState, loadAllRoomStates, saveRoomStateWithVersion, deductChipsAtomic, addChipsAtomic,
-  loadAllRoomPlayers,
 } from './casino-db';
 import { calculateEquity } from './equity';
 
@@ -276,7 +274,7 @@ async function enforceTimeout(room: ExtendedRoom): Promise<boolean> {
         room.game.pot = Math.max(0, room.game.pot - player.currentBet);
       }
     }
-    await removeRoomPlayer(room.id, currentPlayer.agentId);
+    // Player removed from game_json via saveWithRetry above
   } else {
     // Auto-fold
     console.log(`[auto-fold] ${currentPlayer.name} timed out in ${room.id} (${timeoutCounts[key]}/3)`);
@@ -376,7 +374,7 @@ export async function joinRoom(roomId: string, agentId: string, agentName: strin
     return result.error || 'Failed to join';
   }
 
-  await saveRoomPlayer(roomId, agentId, agentName, buyIn);
+  // Player data persisted in game_json via saveWithRetry above
 
   // Auto-scale check
   await autoScaleUp(parsed.categoryId);
@@ -398,7 +396,7 @@ export async function leaveRoom(roomId: string, agentId: string): Promise<void> 
   }
 
   room.spectators = room.spectators.filter(id => id !== agentId);
-  await removeRoomPlayer(roomId, agentId);
+  // Player removed from game_json via saveWithRetry above
 
   // Save updated state
   if (room.game.players.length === 0) {
@@ -497,7 +495,7 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
 
     // Persist chip counts after each completed hand
     for (const p of room.game.players) {
-      if (p.chips > 0) await saveRoomPlayer(roomId, p.agentId, p.name, p.chips);
+      // Player chips persisted in game_json
     }
 
     // Remove busted players
@@ -505,7 +503,7 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
     for (const p of bustedPlayers) {
       console.log(`[rooms] busted player ${p.name} (${p.agentId}) removed from ${roomId}`);
       removePlayer(room.game, p.agentId);
-      await removeRoomPlayer(roomId, p.agentId);
+      // Busted player removed from game_json
     }
 
     if (room.game.players.length < 2) return { game: null, error: 'not enough players after bust' };
@@ -527,39 +525,30 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
 // ─── Auto-scaling ──────────────────────────────────────────────────────────────
 
 async function autoScaleUp(categoryId: string): Promise<string | null> {
-  // Load all room players to figure out which tables have players
-  const allPlayers = await loadAllRoomPlayers();
+  const allStates = await loadAllRoomStates();
   const cat = STAKE_CATEGORIES.find(c => c.id === categoryId);
   if (!cat) return null;
 
   const minCount = MIN_TABLES[categoryId] ?? 1;
-
-  // Find all table numbers in this category (minimum tables + any with players)
   const tableNumbers = new Set<number>();
   for (let i = 1; i <= minCount; i++) tableNumbers.add(i);
-  for (const p of allPlayers) {
-    const parsed = parseRoomId(p.roomId);
-    if (parsed && parsed.categoryId === categoryId) {
-      tableNumbers.add(parsed.tableNumber);
-    }
+  for (const [rid] of allStates) {
+    const parsed = parseRoomId(rid);
+    if (parsed && parsed.categoryId === categoryId) tableNumbers.add(parsed.tableNumber);
   }
 
-  // Check if all existing tables are >= 70% full
   let allBusy = true;
   for (const num of tableNumbers) {
     const rid = makeRoomId(categoryId, num);
-    const playersAtTable = allPlayers.filter(p => p.roomId === rid).length;
-    if (playersAtTable / cat.maxPlayers < SCALE_UP_THRESHOLD) {
-      allBusy = false;
-      break;
-    }
+    const state = allStates.get(rid);
+    const count = (state?.game as any)?.players?.length ?? 0;
+    if (count / cat.maxPlayers < SCALE_UP_THRESHOLD) { allBusy = false; break; }
   }
 
   if (!allBusy) return null;
-
   const nextNum = Math.max(...tableNumbers) + 1;
   const newRoomId = makeRoomId(categoryId, nextNum);
-  console.log(`[rooms] Auto-scaled: ${newRoomId} (all ${tableNumbers.size} tables were >=${SCALE_UP_THRESHOLD * 100}% full)`);
+  console.log(`[rooms] Auto-scaled: ${newRoomId}`);
   return newRoomId;
 }
 
@@ -569,29 +558,24 @@ async function autoScaleUp(categoryId: string): Promise<string | null> {
  */
 export async function autoScaleDown(): Promise<number> {
   let removed = 0;
-  const allPlayers = await loadAllRoomPlayers();
+  const allStates = await loadAllRoomStates();
 
   for (const cat of STAKE_CATEGORIES) {
     const minCount = MIN_TABLES[cat.id] ?? 1;
-
-    // Find all table numbers with players or game state
     const tableNumbers = new Set<number>();
-    for (const p of allPlayers) {
-      const parsed = parseRoomId(p.roomId);
-      if (parsed && parsed.categoryId === cat.id) {
-        tableNumbers.add(parsed.tableNumber);
-      }
+    for (const [rid] of allStates) {
+      const parsed = parseRoomId(rid);
+      if (parsed && parsed.categoryId === cat.id) tableNumbers.add(parsed.tableNumber);
     }
-    // Add minimum tables
     for (let i = 1; i <= minCount; i++) tableNumbers.add(i);
 
-    // Remove empty tables beyond minimum (highest numbered first)
     const sorted = [...tableNumbers].sort((a, b) => b - a);
     let currentCount = sorted.length;
     for (const num of sorted) {
       if (currentCount <= minCount) break;
       const rid = makeRoomId(cat.id, num);
-      const hasPlayers = allPlayers.some(p => p.roomId === rid);
+      const state = allStates.get(rid);
+      const hasPlayers = ((state?.game as any)?.players?.length ?? 0) > 0;
       if (!hasPlayers) {
         await deleteRoomState(rid);
         currentCount--;
@@ -612,9 +596,12 @@ export async function getRoom(id: string): Promise<ExtendedRoom | null> {
 
 /** Returns the roomId of the first room where agentId is seated, or null */
 export async function getAgentRoom(agentId: string): Promise<string | null> {
-  const allPlayers = await loadAllRoomPlayers();
-  const found = allPlayers.find(p => p.agentId === agentId);
-  return found?.roomId ?? null;
+  const allStates = await loadAllRoomStates();
+  for (const [rid, state] of allStates) {
+    const players = (state.game as any)?.players ?? [];
+    if (players.some((p: any) => p.agentId === agentId)) return rid;
+  }
+  return null;
 }
 
 // ─── State version ────────────────────────────────────────────────────────────
@@ -662,52 +649,28 @@ function toRoomInfo(room: ExtendedRoom, playerCount: number): RoomInfo {
 }
 
 export async function listRooms(): Promise<RoomInfo[]> {
-  const [allPlayers, allStates] = await Promise.all([
-    loadAllRoomPlayers(),
-    loadAllRoomStates(),
-  ]);
-  const playersByRoom = new Map<string, number>();
-  for (const p of allPlayers) {
-    playersByRoom.set(p.roomId, (playersByRoom.get(p.roomId) ?? 0) + 1);
-  }
-
+  const allStates = await loadAllRoomStates();
   const rooms: RoomInfo[] = [];
 
   for (const cat of STAKE_CATEGORIES) {
     const minCount = MIN_TABLES[cat.id] ?? 1;
-
-    // Collect all table numbers: minimum + any with players or active games
     const tableNumbers = new Set<number>();
     for (let i = 1; i <= minCount; i++) tableNumbers.add(i);
-    for (const p of allPlayers) {
-      const parsed = parseRoomId(p.roomId);
-      if (parsed && parsed.categoryId === cat.id) {
-        tableNumbers.add(parsed.tableNumber);
-      }
-    }
     for (const [rid] of allStates) {
       const parsed = parseRoomId(rid);
-      if (parsed && parsed.categoryId === cat.id) {
-        tableNumbers.add(parsed.tableNumber);
-      }
+      if (parsed && parsed.categoryId === cat.id) tableNumbers.add(parsed.tableNumber);
     }
 
     for (const num of [...tableNumbers].sort((a, b) => a - b)) {
       const rid = makeRoomId(cat.id, num);
       const shell = buildRoomShell(cat.id, num);
-      const count = playersByRoom.get(rid) ?? 0;
-
-      // Load game state for pot info
-      const saved = await loadRoomState(rid);
-      if (saved?.game) {
-        const g = saved.game as any;
-        shell.game = g;
-        shell.stateVersion = saved.stateVersion;
+      const state = allStates.get(rid);
+      if (state?.game) {
+        shell.game = state.game as any;
+        shell.stateVersion = state.stateVersion;
       }
-
-      // Use game_json player count as fallback if casino_room_players is empty
-      const gamePlayerCount = shell.game?.players?.length ?? 0;
-      rooms.push(toRoomInfo(shell, Math.max(count, gamePlayerCount)));
+      const playerCount = shell.game?.players?.length ?? 0;
+      rooms.push(toRoomInfo(shell, playerCount));
     }
   }
 
@@ -839,9 +802,12 @@ export async function getValidActionsForRoom(roomId: string): Promise<ReturnType
 // ─── Heartbeat ────────────────────────────────────────────────────────────────
 
 export async function heartbeatPlayer(roomId: string, agentId: string): Promise<boolean> {
-  const dbPlayers = await loadRoomPlayers(roomId);
-  const player = dbPlayers.find(p => p.agentId === agentId);
-  if (!player) return false;
-  await saveRoomPlayer(roomId, agentId, player.agentName, player.chips);
+  // Touch casino_room_state.updated_at to keep the room alive
+  const room = await loadRoom(roomId);
+  if (!room?.game) return false;
+  const hasPlayer = room.game.players.some((p: any) => p.agentId === agentId);
+  if (!hasPlayer) return false;
+  // Re-save current state to refresh updated_at
+  await saveRoomState(roomId, room.game, room.stateVersion);
   return true;
 }

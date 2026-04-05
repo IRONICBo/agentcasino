@@ -57,80 +57,8 @@ export async function saveAgent(agent: Agent): Promise<void> {
   if (error) console.error('[casino-db] saveAgent:', error.message);
 }
 
-// ── Room Players ─────────────────────────────────────────────────────────────
-
-export interface RoomPlayerRecord {
-  agentId:   string;
-  agentName: string;
-  chips:     number;
-  updatedAt: number; // ms since epoch
-}
-
-const STALE_MS = 15 * 60 * 1000; // 15 minutes — players idle longer than this are treated as disconnected
-
-/** Load all seated players for a room (used on cold-start hydration) */
-export async function loadRoomPlayers(roomId: string): Promise<RoomPlayerRecord[]> {
-  const { data, error } = await supabase
-    .from('casino_room_players')
-    .select('agent_id, agent_name, chips_at_table, updated_at')
-    .eq('room_id', roomId);
-  if (error) { console.error('[casino-db] loadRoomPlayers:', error.message); return []; }
-  return (data ?? []).map(row => ({
-    agentId:   row.agent_id,
-    agentName: row.agent_name,
-    chips:     row.chips_at_table,
-    updatedAt: new Date(row.updated_at).getTime(),
-  }));
-}
-
-export { STALE_MS };
-
-/** Load ALL room players across all rooms (for cold-start table discovery) */
-export async function loadAllRoomPlayers(): Promise<(RoomPlayerRecord & { roomId: string })[]> {
-  const { data, error } = await supabase
-    .from('casino_room_players')
-    .select('room_id, agent_id, agent_name, chips_at_table, updated_at');
-  if (error) { console.error('[casino-db] loadAllRoomPlayers:', error.message); return []; }
-  return (data ?? []).map(row => ({
-    roomId:    row.room_id,
-    agentId:   row.agent_id,
-    agentName: row.agent_name,
-    chips:     row.chips_at_table,
-    updatedAt: new Date(row.updated_at).getTime(),
-  }));
-}
-
-/** Upsert a player's seat + chip count (call on join and after each hand) */
-export async function saveRoomPlayer(roomId: string, agentId: string, agentName: string, chips: number): Promise<void> {
-  const { error } = await supabase.from('casino_room_players').upsert({
-    room_id:        roomId,
-    agent_id:       agentId,
-    agent_name:     agentName,
-    chips_at_table: chips,
-  }, { onConflict: 'room_id,agent_id' });
-  if (error) console.error('[casino-db] saveRoomPlayer:', error.message);
-}
-
-/** Delete all casino_room_players rows not updated within STALE_MS. Returns removed count. */
-export async function cleanStaleRoomPlayers(): Promise<number> {
-  const cutoff = new Date(Date.now() - STALE_MS).toISOString();
-  const { data, error } = await supabase
-    .from('casino_room_players')
-    .delete()
-    .lt('updated_at', cutoff)
-    .select('agent_id');
-  if (error) { console.error('[casino-db] cleanStaleRoomPlayers:', error.message); return 0; }
-  return data?.length ?? 0;
-}
-
-/** Remove a player from the persistent seat list (call on leave) */
-export async function removeRoomPlayer(roomId: string, agentId: string): Promise<void> {
-  const { error } = await supabase.from('casino_room_players')
-    .delete()
-    .eq('room_id', roomId)
-    .eq('agent_id', agentId);
-  if (error) console.error('[casino-db] removeRoomPlayer:', error.message);
-}
+// ── Room Players (derived from casino_room_state.game_json) ─────────────────
+// No separate casino_room_players table — player data lives in game_json.
 
 // ── Games ────────────────────────────────────────────────────────────────────
 
@@ -205,23 +133,28 @@ export async function recordGame(record: GameRecord): Promise<void> {
 // ── Leaderboard ──────────────────────────────────────────────────────────────
 
 export async function getLeaderboard(limit = 50) {
-  const [agentsResult, tableResult] = await Promise.all([
+  const [agentsResult, statesResult] = await Promise.all([
     supabase
       .from('casino_agents')
       .select('id, name, chips, games_played, games_won, total_won, vpip_hands, pfr_hands, aggressive_actions, passive_actions, showdown_hands, showdown_wins, cbet_opportunities, cbet_made')
       .order('chips', { ascending: false })
-      .limit(limit * 2), // fetch extra so re-sorting by total chips still gives top N
+      .limit(limit * 2),
     supabase
-      .from('casino_room_players')
-      .select('agent_id, chips_at_table'),
+      .from('casino_room_state')
+      .select('game_json'),
   ]);
 
   if (agentsResult.error) { console.error('[casino-db] getLeaderboard:', agentsResult.error.message); return []; }
 
-  // Build map of at-table chips per agent
+  // Build map of at-table chips from game_json players
   const tableChips = new Map<string, number>();
-  for (const row of tableResult.data ?? []) {
-    tableChips.set(row.agent_id, (tableChips.get(row.agent_id) ?? 0) + row.chips_at_table);
+  for (const row of statesResult.data ?? []) {
+    const players = (row.game_json as any)?.players ?? [];
+    for (const p of players) {
+      if (p.agentId && p.chips > 0) {
+        tableChips.set(p.agentId, (tableChips.get(p.agentId) ?? 0) + p.chips);
+      }
+    }
   }
 
   return (agentsResult.data ?? [])

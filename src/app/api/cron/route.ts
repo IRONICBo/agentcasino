@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cleanStaleRoomPlayers } from '@/lib/casino-db';
 import { autoScaleDown } from '@/lib/room-manager';
 
 /**
  * Vercel Cron Job — runs every 10 minutes.
- * Cleans up stale casino_room_players rows and scales down empty tables.
- *
- * Protected by CRON_SECRET env var (set in Vercel dashboard).
- * Vercel automatically sends Authorization: Bearer <CRON_SECRET> for cron routes.
+ * Scales down empty tables.
  */
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -19,14 +15,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const dbRemoved = await cleanStaleRoomPlayers();
   const tablesRemoved = await autoScaleDown();
 
-  console.log(`[cron] cleanup — DB rows: ${dbRemoved}, tables scaled down: ${tablesRemoved}`);
+  console.log(`[cron] cleanup — tables scaled down: ${tablesRemoved}`);
 
   return NextResponse.json({
     ok: true,
-    db_rows_removed: dbRemoved,
     tables_scaled_down: tablesRemoved,
     ran_at: new Date().toISOString(),
   });
