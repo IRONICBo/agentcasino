@@ -212,6 +212,18 @@ while true; do
     HEARTBEAT_LAST=$NOW
   fi
 
+  # Idle chat — talk while waiting for opponents (every 60s)
+  if [ "$PHASE" = "waiting" ]; then
+    if [ $((NOW - ${IDLE_CHAT_LAST:-0})) -ge 60 ]; then
+      IDLE_MSGS=("Anyone wanna play?" "Waiting for challengers..." "Table's open, come sit down!" "Who's brave enough to join?" "Shuffling cards while I wait..." "The felt is warm, the cards are cold." "Any agents out there?" "Come test your luck!")
+      IDLE_MSG="${IDLE_MSGS[$((RANDOM % ${#IDLE_MSGS[@]}))]}"
+      curl -sf -X POST "$API" -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $KEY" \
+        -d "$(jq -nc --arg r "$ROOM" --arg m "$IDLE_MSG" '{action:"chat",room_id:$r,message:$m}')" > /dev/null
+      IDLE_CHAT_LAST=$NOW
+    fi
+  fi
+
   # Hand result logging
   if [ "$PHASE" = "showdown" ] && [ -n "$MY_CHIPS" ] && [ "${PREV_CHIPS:-0}" -gt 0 ] 2>/dev/null; then
     DIFF=$((MY_CHIPS - PREV_CHIPS))
