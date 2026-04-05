@@ -53,7 +53,54 @@ body {
   background: var(--bg-page);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-weight: 600;
+  font-weight: 400;
+}
+
+/* ── Light mode theme ── */
+html.theme-light {
+  --bg-page: #faf8ff;
+  --ink: #18111f;
+  --ink-light: #3d3048;
+  --ink-muted: #6b5f7a;
+  --border: rgba(0,0,0,0.08);
+  --glass: rgba(255,255,255,0.9);
+  --glass-border: rgba(0,0,0,0.1);
+}
+
+html.theme-light body {
+  background: var(--bg-page);
+  color: var(--ink);
+}
+
+html.theme-light .lobby-bg {
+  background: #faf8ff;
+}
+html.theme-light .lobby-bg .lips-bg { display: none; }
+html.theme-light .lobby-bg .lips-overlay { display: none; }
+
+html.theme-light .glass-card {
+  background: rgba(255,255,255,0.97);
+  border-color: rgba(0,0,0,0.06);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1);
+}
+
+html.theme-light header span,
+html.theme-light header a {
+  color: var(--ink) !important;
+}
+html.theme-light header .dot-live {
+  filter: none;
+}
+html.theme-light header a[href="/leaderboard"],
+html.theme-light header a[href*="github"] {
+  background: rgba(0,0,0,0.05) !important;
+  border-color: rgba(0,0,0,0.1) !important;
+  color: var(--ink) !important;
+}
+html.theme-light .ThemeToggle {
+  background: rgba(0,0,0,0.06) !important;
+  border-color: rgba(0,0,0,0.1) !important;
+  color: var(--ink) !important;
 }
 
 /* ── Pop-art lips background ── */
