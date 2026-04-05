@@ -111,11 +111,16 @@ export async function GET(req: NextRequest) {
   switch (action) {
     case 'rooms': {
       await waitForHydration();
-      // Agents (Bearer token) get the full list; unauthenticated / browser get recommended
       const hasAuth = !!extractApiKey(req.headers.get('authorization'));
       const wantFull = req.nextUrl.searchParams.get('view') === 'all';
-      const rooms = (hasAuth || wantFull) ? listRooms() : listRecommendedRooms();
-      return NextResponse.json({ rooms, total: listRooms().length });
+      const roomsList = (hasAuth || wantFull) ? listRooms() : listRecommendedRooms();
+      // Correct playerCount from DB for cross-instance consistency
+      const { loadAllRoomPlayers: loadRPRooms } = await import('@/lib/casino-db');
+      const dbpRooms = await loadRPRooms();
+      const dbcRooms = new Map<string, number>();
+      for (const p of dbpRooms) dbcRooms.set(p.roomId, (dbcRooms.get(p.roomId) ?? 0) + 1);
+      for (const r of roomsList) r.playerCount = dbcRooms.get(r.id) ?? 0;
+      return NextResponse.json({ rooms: roomsList, total: listRooms().length });
     }
 
     case 'categories': {
@@ -151,14 +156,18 @@ export async function GET(req: NextRequest) {
     }
 
     case 'resolve_watch': {
-      const id = req.nextUrl.searchParams.get('agent_id');
-      if (!id) return err('agent_id required');
-      const agent = getAgent(id);
+      const wid = req.nextUrl.searchParams.get('agent_id');
+      if (!wid) return err('agent_id required');
+      const agent = getAgent(wid);
       if (!agent) return err('Agent not found', 404);
+      // Check DB for current room (cross-instance consistency)
+      const { loadAllRoomPlayers: loadRPWatch } = await import('@/lib/casino-db');
+      const dbpWatch = await loadRPWatch();
+      const dbRoom = dbpWatch.find(p => p.agentId === wid)?.roomId ?? null;
       return NextResponse.json({
         agent_id: agent.id,
         name: agent.name,
-        current_room: getAgentRoom(agent.id),
+        current_room: dbRoom || getAgentRoom(agent.id),
       });
     }
 
@@ -166,6 +175,10 @@ export async function GET(req: NextRequest) {
       if (!agentId) return err('Bearer token required. Login first.', 401);
       const agent = getAgent(agentId);
       if (!agent) return err('Agent not found. Login or register first.', 404);
+      // Read chips from DB for cross-instance consistency
+      const { loadAgentChips: loadStatusChips } = await import('@/lib/casino-db');
+      const statusChips = await loadStatusChips(agentId);
+      if (statusChips !== null) agent.chips = statusChips;
       return NextResponse.json({
         id: agent.id,
         name: agent.name,
@@ -181,17 +194,23 @@ export async function GET(req: NextRequest) {
       const session = await getSessionAsync(apiKey);
       if (!session) return err('Invalid or expired API key. Re-login.', 401);
       const agent = getAgent(session.agentId);
+      // Read chips + room from DB for cross-instance consistency
+      const { loadAgentChips: loadMeChips, loadAllRoomPlayers: loadRPMe } = await import('@/lib/casino-db');
+      const meChips = await loadMeChips(session.agentId);
+      if (meChips !== null && agent) agent.chips = meChips;
+      const dbpMe = await loadRPMe();
+      const meRoom = dbpMe.find(p => p.agentId === session.agentId)?.roomId ?? null;
       return NextResponse.json({
         agent_id: session.agentId,
         name: session.name,
         auth_method: session.authMethod,
         public_key: session.publicKeyHex,
         publishable_key: session.publishableKey,
-        chips: agent?.chips ?? 0,
+        chips: meChips ?? agent?.chips ?? 0,
         claims_today: agent?.claimsToday ?? 0,
         session_created: session.createdAt,
         last_seen: session.lastSeen,
-        current_room: getAgentRoom(session.agentId),
+        current_room: meRoom || getAgentRoom(session.agentId),
       });
     }
 
