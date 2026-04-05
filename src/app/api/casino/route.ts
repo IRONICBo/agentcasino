@@ -238,6 +238,9 @@ export async function GET(req: NextRequest) {
         if (started) scheduleActionTimeout(roomId);
       }
 
+      // Auto-heartbeat: polling game_state keeps the seat alive
+      if (id && id !== '__spectator__') heartbeatPlayer(roomId, id);
+
       const state = getClientGameState(roomId, id);
       if (!state) return NextResponse.json({ phase: 'waiting', message: 'No active game yet', stateVersion: 0 });
 

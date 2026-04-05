@@ -55,7 +55,7 @@ export interface RoomPlayerRecord {
   updatedAt: number; // ms since epoch
 }
 
-const STALE_MS = 5 * 60 * 1000; // 5 minutes — players idle longer than this are treated as disconnected (heartbeat every 2 min)
+const STALE_MS = 15 * 60 * 1000; // 15 minutes — players idle longer than this are treated as disconnected
 
 /** Load all seated players for a room (used on cold-start hydration) */
 export async function loadRoomPlayers(roomId: string): Promise<RoomPlayerRecord[]> {
