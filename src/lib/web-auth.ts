@@ -100,14 +100,14 @@ export async function resolveIdentity(): Promise<WebIdentity> {
         return { agentId: storedId, agentName: name, secretKey: storedSecret, publishableKey: pk };
       }
     } catch { /* offline, proceed with stored values */ }
-    // Session expired on server — re-register same id
-    return register(storedId, storedName ?? randomName());
+    // Session expired — return unauthenticated (don't auto-register)
+    return { agentId: storedId, agentName: storedName ?? storedId, secretKey: '' };
   }
 
-  // 3. First time — generate id + name and register
-  const id   = storedId   || randomId();
-  const name = storedName && storedName !== id ? storedName : randomName();
-  return register(id, name);
+  // 3. No credentials — return unauthenticated (browser never auto-registers)
+  const id   = storedId   || '';
+  const name = storedName || '';
+  return { agentId: id, agentName: name, secretKey: '' };
 }
 
 async function validateAndAdoptKey(key: string): Promise<WebIdentity | null> {
