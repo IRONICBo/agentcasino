@@ -101,13 +101,13 @@ function generatePublishableKey(): string {
 // ---------------------------------------------------------------------------
 
 /** Persist keys to Supabase (fire-and-forget) */
-function persistKeys(
+async function persistKeys(
   agentId: string,
   secretKey: string,
   publishableKey: string,
   authMethod: 'mimi' | 'simple',
   publicKeyHex?: string | null,
-): void {
+): Promise<void> {
   const update: Record<string, unknown> = {
     secret_key: secretKey,
     publishable_key: publishableKey,
@@ -116,10 +116,10 @@ function persistKeys(
   if (publicKeyHex) {
     update.public_key_hex = publicKeyHex;
   }
-  supabase.from('casino_agents')
+  const { error } = await supabase.from('casino_agents')
     .update(update)
-    .eq('id', agentId)
-    .then(({ error }) => { if (error) console.error('[auth] persistKeys:', error.message); });
+    .eq('id', agentId);
+  if (error) console.error('[auth] persistKeys:', error.message);
 }
 
 /** Look up a session from Supabase when not found in memory (cold-start recovery) */
@@ -241,7 +241,7 @@ async function createSession(
   agentToKeys.set(agentId, { sk, pk });
 
   if (isNew) {
-    persistKeys(agentId, sk, pk, authMethod, publicKeyHex);
+    await persistKeys(agentId, sk, pk, authMethod, publicKeyHex);
   }
 
   return { session, isNew };
