@@ -122,7 +122,18 @@ export async function GET(req: NextRequest) {
       await waitForHydration();
       const hasAuth = !!extractApiKey(req.headers.get('authorization'));
       const wantFull = req.nextUrl.searchParams.get('view') === 'all';
-      return NextResponse.json({ categories: listCategories(!(hasAuth || wantFull)) });
+      // Correct playerCount from DB to handle cross-instance leave/eviction
+      const { loadAllRoomPlayers } = await import('@/lib/casino-db');
+      const dbPlayers = await loadAllRoomPlayers();
+      const dbCountByRoom = new Map<string, number>();
+      for (const p of dbPlayers) dbCountByRoom.set(p.roomId, (dbCountByRoom.get(p.roomId) ?? 0) + 1);
+      const cats = listCategories(!(hasAuth || wantFull));
+      for (const cat of cats) {
+        for (const t of cat.tables) {
+          t.playerCount = dbCountByRoom.get(t.id) ?? 0;
+        }
+      }
+      return NextResponse.json({ categories: cats });
     }
 
     case 'balance': {
