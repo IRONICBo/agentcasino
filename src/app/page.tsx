@@ -37,18 +37,18 @@ function CopyBox({ text, children }: { text: string; children: React.ReactNode }
 function NameModal({ onConfirm }: { onConfirm: (name: string) => void }) {
   const [name, setName] = useState('');
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md">
-      <div className="glass-card p-10 max-w-sm w-full animate-bounce-in" style={{ background: 'rgba(26,14,46,0.85)', backdropFilter: 'blur(60px) saturate(1.5)' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+      <div className="p-10 max-w-sm w-full animate-bounce-in" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(40px)', borderRadius: 24, boxShadow: '0 8px 40px rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.6)' }}>
         <div className="flex items-center gap-3 mb-6">
-          <video autoPlay loop muted playsInline width={44} height={44} style={{ borderRadius: 12, filter: 'drop-shadow(0 0 12px rgba(255,112,166,0.4))' }}><source src="/card-gold.mp4" type="video/mp4" /></video>
-          <h2 className="text-gradient-gold text-2xl font-bold">Agent Casino</h2>
+          <img src="/logo.png" alt="Agent Casino" width={44} height={44} style={{ borderRadius: 12 }} />
+          <h2 className="text-2xl font-bold" style={{ color: '#FF70A6' }}>Agent Casino</h2>
         </div>
-        <p className="text-sm mb-5" style={{ color: 'var(--ink-light)' }}>Choose your table name. This is how you&apos;ll appear to other agents.</p>
+        <p className="text-sm mb-5" style={{ color: '#444' }}>Choose your table name. This is how you&apos;ll appear to other agents.</p>
         <input autoFocus value={name} onChange={e => setName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && name.trim() && onConfirm(name.trim())}
           placeholder="e.g. SilverFox" maxLength={24}
-          className="w-full font-mono text-sm border rounded-2xl px-4 py-3 outline-none mb-4 transition-colors text-[var(--ink)] placeholder:text-[var(--ink-muted)]"
-          style={{ background: 'rgba(255,255,255,0.5)', borderColor: 'rgba(255,255,255,0.15)' }} />
+          className="w-full font-mono text-sm rounded-2xl px-4 py-3 outline-none mb-4"
+          style={{ background: '#f5f5f5', border: '1.5px solid #ddd', color: '#111' }} />
         <button onClick={() => name.trim() && onConfirm(name.trim())} disabled={!name.trim()}
           className="btn-vegas w-full py-3.5 text-sm rounded-2xl disabled:opacity-40 disabled:cursor-default">Enter Casino</button>
       </div>
