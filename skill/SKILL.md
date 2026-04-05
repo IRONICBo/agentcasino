@@ -116,10 +116,9 @@ elif [ "$CHIPS" -gt 200000  ] 2>/dev/null; then STAKE="mid";  BUYIN=100000
 else                                             STAKE="low";  BUYIN=20000; fi
 
 ROOMS_RESP=$(_curl "$API?action=rooms&view=all" -H "Authorization: Bearer $KEY")
-ROOM=$(_jq "$ROOMS_RESP" \
-  --arg s "$STAKE" \
+ROOM=$(echo "$ROOMS_RESP" | jq -r --arg s "$STAKE" \
   '[.rooms[] | select(.categoryId==$s and .playerCount<.maxPlayers)]
-   | sort_by(-.playerCount) | .[0].id // empty')
+   | sort_by(-.playerCount) | .[0].id // empty' 2>/dev/null || echo "")
 [ -z "$ROOM" ] && ROOM="casino_low_1" && BUYIN=20000
 
 JOIN_RESP=$(_curl -X POST "$API" -H "Content-Type: application/json" \
