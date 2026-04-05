@@ -43,18 +43,18 @@ export async function loadAgentChips(agentId: string): Promise<number | null> {
   return data.chips;
 }
 
-/** Upsert agent — persists chips AND claim tracking */
-export function saveAgent(agent: Agent): void {
-  supabase.from('casino_agents').upsert({
+/** Upsert agent — persists chips AND claim tracking.
+ *  Returns a promise so callers on critical paths can await it. */
+export async function saveAgent(agent: Agent): Promise<void> {
+  const { error } = await supabase.from('casino_agents').upsert({
     id:              agent.id,
     name:            agent.name,
     chips:           agent.chips,
     claims_today:    agent.claimsToday,
     last_claim_at:   agent.lastClaimAt,
     last_claim_date: agent.lastClaimDate,
-  }, { onConflict: 'id' }).then(({ error }) => {
-    if (error) console.error('[casino-db] saveAgent:', error.message);
-  });
+  }, { onConflict: 'id' });
+  if (error) console.error('[casino-db] saveAgent:', error.message);
 }
 
 // ── Room Players ─────────────────────────────────────────────────────────────

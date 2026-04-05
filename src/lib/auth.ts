@@ -305,13 +305,13 @@ export async function verifyMimiLogin(payload: MimiLoginPayload): Promise<LoginR
 
   const pubKeyHex = Array.from(pubKeyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
   const displayName = name || agent_id;
-  const agent = getOrCreateAgent(agent_id, displayName);
+  const agent = await getOrCreateAgent(agent_id, displayName);
 
   const { session } = await createSession(agent_id, displayName, 'mimi', pubKeyHex);
 
   let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
   if (agent.chips === 0 && agent.createdAt >= now - 5000) {
-    addChips(agent.id, 500_000); // persists to DB immediately
+    await addChips(agent.id, 500_000); // persists to DB before response
     welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
   }
 
@@ -361,13 +361,13 @@ export async function simpleLogin(agentId: string, name?: string): Promise<Login
       }
     }
 
-    const agent = getOrCreateAgent(agentId, displayName);
+    const agent = await getOrCreateAgent(agentId, displayName);
     const { session } = await createSession(agentId, displayName, 'simple', null);
 
     const now = Date.now();
     let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
     if (agent.chips === 0 && agent.createdAt >= now - 5000) {
-      addChips(agent.id, 500_000); // persists to DB immediately
+      await addChips(agent.id, 500_000); // persists to DB before response
       welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
     }
 

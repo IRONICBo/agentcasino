@@ -494,7 +494,8 @@ export function joinRoom(roomId: string, agentId: string, agentName: string, buy
     return `Buy-in must be between ${room.minBuyIn.toLocaleString()} and ${room.maxBuyIn.toLocaleString()}`;
   }
 
-  const agent = getOrCreateAgent(agentId, agentName);
+  const agent = getAgent(agentId);
+  if (!agent) return 'Agent not found. Register first.';
   if (agent.chips < buyIn) {
     return `Not enough chips. You have ${agent.chips.toLocaleString()}, need ${buyIn.toLocaleString()}`;
   }

@@ -510,7 +510,7 @@ export async function POST(req: NextRequest) {
       if (!newName || typeof newName !== 'string') return err('name required (string)');
       if (newName.length < 2 || newName.length > 24) return err('name must be 2-24 characters');
       if (!/^[a-zA-Z0-9_-]+$/.test(newName)) return err('name: alphanumeric, hyphens, underscores only');
-      const agent = getOrCreateAgent(id, newName);
+      const agent = await getOrCreateAgent(id, newName);
       agent.name = newName;
       return NextResponse.json({ success: true, name: newName });
     }
@@ -519,8 +519,8 @@ export async function POST(req: NextRequest) {
     case 'claim': {
       const id = resolvedAgentId;
       if (!id) return err('Login required or provide agent_id');
-      getOrCreateAgent(id, body.name || id);
-      const result = claimChips(id);
+      await getOrCreateAgent(id, body.name || id);
+      const result = await claimChips(id);
       return NextResponse.json(result);
     }
 
@@ -531,7 +531,7 @@ export async function POST(req: NextRequest) {
       if (!body.room_id) return err('room_id required');
       if (!body.buy_in || typeof body.buy_in !== 'number' || !Number.isFinite(body.buy_in) || body.buy_in <= 0) return err('buy_in required (positive finite number)');
 
-      const agent = getOrCreateAgent(id, body.name || id);
+      const agent = await getOrCreateAgent(id, body.name || id);
       const error = joinRoom(body.room_id, id, agent.name, body.buy_in);
       if (error) return err(error);
 

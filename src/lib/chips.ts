@@ -24,7 +24,7 @@ function todayStr(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-export function getOrCreateAgent(id: string, name: string): Agent {
+export async function getOrCreateAgent(id: string, name: string): Promise<Agent> {
   let agent = agents.get(id);
   if (!agent) {
     agent = {
@@ -37,7 +37,7 @@ export function getOrCreateAgent(id: string, name: string): Agent {
       createdAt: Date.now(),
     };
     agents.set(id, agent);
-    saveAgent(agent);
+    await saveAgent(agent);
   }
   // Reset daily claims if new day
   const today = todayStr();
@@ -69,7 +69,7 @@ export interface ClaimResult {
   nextClaimIn?: number; // seconds until next claim available
 }
 
-export function claimChips(agentId: string): ClaimResult {
+export async function claimChips(agentId: string): Promise<ClaimResult> {
   const agent = agents.get(agentId);
   if (!agent) {
     return { success: false, message: 'Agent not found. Register first.', chips: 0 };
@@ -112,7 +112,7 @@ export function claimChips(agentId: string): ClaimResult {
   agent.claimsToday += 1;
   agent.lastClaimAt = now;
   agent.chips += CLAIM_AMOUNT;
-  saveAgent(agent);
+  await saveAgent(agent);
 
   return {
     success: true,
@@ -127,19 +127,19 @@ export function getChipBalance(agentId: string): number {
   return agents.get(agentId)?.chips ?? 0;
 }
 
-export function deductChips(agentId: string, amount: number): boolean {
+export async function deductChips(agentId: string, amount: number): Promise<boolean> {
   const agent = agents.get(agentId);
   if (!agent || agent.chips < amount) return false;
   agent.chips -= amount;
-  saveAgent(agent);
+  await saveAgent(agent);
   return true;
 }
 
-export function addChips(agentId: string, amount: number): void {
+export async function addChips(agentId: string, amount: number): Promise<void> {
   const agent = agents.get(agentId);
   if (agent) {
     agent.chips += amount;
-    saveAgent(agent);
+    await saveAgent(agent);
   }
 }
 
