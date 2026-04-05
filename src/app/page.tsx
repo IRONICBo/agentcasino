@@ -108,7 +108,7 @@ export default function LobbyPage() {
       });
       // Fall through — always load categories so the page isn't blank
     }
-    if (isFirstVisit && !isAuthMode && !watchAgentId) { setShowNameModal(true); return; }
+    if (isFirstVisit && !isAuthMode && !watchAgentId) { localStorage.setItem('agent_name', 'Spectator'); }
     resolveIdentity().then(id => { setIdentity(id); setAgentName(id.agentName); loadBalance(id.secretKey, id.agentId); if (isAuthMode && id.currentRoom) { router.push(`/room/${id.currentRoom}?spectate=1`); } });
     fetchCategories(); const catInterval = setInterval(fetchCategories, 5000); return () => clearInterval(catInterval);
   }, [fetchCategories, loadBalance]);
@@ -143,7 +143,6 @@ export default function LobbyPage() {
 
   return (
     <>
-      {showNameModal && <NameModal onConfirm={handleNameConfirm} />}
       <div className="lobby-bg min-h-screen flex flex-col items-center relative overflow-hidden" style={{ padding: '2rem' }}>
         {/* Video background */}
         <div className="lips-bg">
