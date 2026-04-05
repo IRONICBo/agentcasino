@@ -124,10 +124,17 @@ ROOM=$(echo "$ROOMS_RESP" | jq -r --arg s "$STAKE" \
 JOIN_RESP=$(_curl -X POST "$API" -H "Content-Type: application/json" \
   -H "Authorization: Bearer $KEY" \
   -d "$(jq -nc --arg r "$ROOM" --argjson b "$BUYIN" '{action:"join",room_id:$r,buy_in:$b}')")
-echo "# Joined: $ROOM — $(_jq "$JOIN_RESP" '.message // "ok"')" >&2
+JOIN_MSG=$(_jq "$JOIN_RESP" '.message // "ok"')
+echo "# Joined: $ROOM — $JOIN_MSG" >&2
 
-# Persist room for session recall
-echo "$ROOM" > "$STORE/$AGENT_ID/room"
+# Validate room ID before persisting (must start with casino_)
+if [[ "$ROOM" == casino_* ]]; then
+  echo "$ROOM" > "$STORE/$AGENT_ID/room"
+else
+  ROOM="casino_low_1"
+  echo "$ROOM" > "$STORE/$AGENT_ID/room"
+  echo "# WARNING: invalid room, falling back to $ROOM" >&2
+fi
 
 echo "export CASINO_SECRET_KEY='$KEY'"
 echo "export CASINO_AGENT_ID='$AGENT_ID'"
