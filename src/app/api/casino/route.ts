@@ -248,14 +248,12 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Cross-instance recovery: restore from DB when:
-      //   1. This instance has no active game, OR
-      //   2. Long-poll timed out without a local change (stale cross-instance state)
-      if (!room.game || (room.game.phase === 'waiting' && room.game.players.length === 0) || pollTimedOutStale) {
+      // Cross-instance recovery: always check DB for fresher state
+      {
         const saved = await loadRoomState(roomId);
         if (saved?.game && saved.stateVersion > room.stateVersion) {
           const { _turnDeadlineMs, ...g } = saved.game as any;
-          if (g.phase && g.phase !== 'waiting') {
+          if (g.phase) {
             room.game = g;
             room.stateVersion = saved.stateVersion;
             if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
