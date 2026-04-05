@@ -264,12 +264,12 @@ export default function LobbyPage() {
           <div className="p-10 lg:p-14 flex flex-col overflow-y-auto max-h-[90vh] lg:max-h-none" style={{ background: 'rgba(255,255,255,0.3)' }}>
             <div className="mb-6"><PixelPokerTable gameState={liveGame} roomName={liveRoomName} roomId={liveRoomId} /></div>
             <div className="flex items-baseline justify-between mb-5">
-              <span className="font-mono text-xs tracking-[0.15em] uppercase font-bold px-4 py-1.5 rounded-full" style={{ background: '#FFD670', color: '#000', boxShadow: '0 3px 8px rgba(255,214,112,0.4)' }}>✦ Live Tables</span>
+              <span className="section-badge section-badge-gold font-mono text-xs tracking-[0.15em] uppercase font-bold px-4 py-1.5 rounded-full">✦ Live Tables</span>
               {totalPlayers > 0 && <span className="font-mono text-xs flex items-center gap-2" style={{ color: 'var(--ink-light)' }}><div className="dot-live" style={{ width: 6, height: 6 }} />{totalPlayers} playing now</span>}
             </div>
             {featuredTables.length > 0 && (
               <div className="mb-8">
-                <div className="flex items-center gap-2 mb-3"><span className="font-mono text-[10px] tracking-widest uppercase px-3 py-1 rounded-full font-bold" style={{ background: '#FF70A6', color: '#fff', boxShadow: '0 3px 8px rgba(255,112,166,0.4)' }}>🔥 Hot Tables</span></div>
+                <div className="flex items-center gap-2 mb-3"><span className="section-badge section-badge-pink font-mono text-[10px] tracking-widest uppercase px-3 py-1 rounded-full font-bold">🔥 Hot Tables</span></div>
                 <div className="grid grid-cols-2 gap-3">
                   {featuredTables.map(room => (
                     <div key={room.id} className="glass-card px-4 py-3.5 flex flex-col gap-2">

@@ -123,14 +123,44 @@ html.theme-light .btn-vegas-outline {
   backdrop-filter: none;
 }
 
-/* Editorial badges */
+/* Editorial badges — all black, no color */
 html.theme-light .badge-high,
 html.theme-light .badge-mid,
 html.theme-light .badge-low {
-  background: #1A1A1A;
-  color: #F6F5F0;
-  border-radius: 0;
-  box-shadow: 2px 2px 0 #1A1A1A;
+  background: #1A1A1A !important;
+  color: #F6F5F0 !important;
+  border-radius: 0 !important;
+  box-shadow: 2px 2px 0 #1A1A1A !important;
+}
+
+/* All pill-style inline badges/labels — strip color, go editorial */
+html.theme-light [style*="background: rgb(255, 112, 166)"],
+html.theme-light [style*="background: #FF70A6"] {
+  background: #1A1A1A !important;
+  color: #F6F5F0 !important;
+  border-radius: 0 !important;
+  box-shadow: 2px 2px 0 #1A1A1A !important;
+}
+html.theme-light [style*="background: rgb(255, 214, 112)"],
+html.theme-light [style*="background: #FFD670"] {
+  background: #1A1A1A !important;
+  color: #F6F5F0 !important;
+  border-radius: 0 !important;
+  box-shadow: 2px 2px 0 #1A1A1A !important;
+}
+html.theme-light [style*="background: rgb(255, 151, 112)"],
+html.theme-light [style*="background: #FF9770"] {
+  background: #1A1A1A !important;
+  color: #F6F5F0 !important;
+  border-radius: 0 !important;
+  box-shadow: 2px 2px 0 #1A1A1A !important;
+}
+html.theme-light [style*="background: rgb(112, 214, 255)"],
+html.theme-light [style*="background: #70D6FF"] {
+  background: #1A1A1A !important;
+  color: #F6F5F0 !important;
+  border-radius: 0 !important;
+  box-shadow: 2px 2px 0 #1A1A1A !important;
 }
 
 /* Editorial typography */
@@ -184,10 +214,73 @@ html.theme-light footer {
   color: #8A8A8A !important;
 }
 
-/* Editorial PixelPokerTable */
+/* Section badges — modern styles */
+.section-badge-gold {
+  background: #FFD670;
+  color: #000;
+  box-shadow: 0 3px 8px rgba(255,214,112,0.4);
+}
+.section-badge-pink {
+  background: #FF70A6;
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(255,112,166,0.4);
+}
+
+/* Section badges — classic override */
+html.theme-light .section-badge {
+  background: transparent !important;
+  color: #1A1A1A !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  letter-spacing: 0.12em;
+}
+
+/* Editorial PixelPokerTable — override inline pink styles */
 html.theme-light .glass-card a,
 html.theme-light a.glass-card {
   border-radius: 0 !important;
+}
+html.theme-light a[style*="border: 2px solid rgb(255, 112, 166)"],
+html.theme-light a[style*="border: 2px solid #FF70A6"] {
+  border-color: #1A1A1A !important;
+  border-radius: 0 !important;
+  box-shadow: 3px 3px 0 #1A1A1A !important;
+}
+html.theme-light [style*="background: rgb(255, 224, 235)"],
+html.theme-light [style*="background: #FFE0EB"] {
+  background: #F6F5F0 !important;
+}
+html.theme-light [style*="background: rgb(255, 240, 245)"],
+html.theme-light [style*="background: #FFF0F5"] {
+  background: #FFFFFF !important;
+}
+html.theme-light [style*="background: rgb(255, 112, 166)"],
+html.theme-light [style*="background: #FF70A6"] {
+  background: #1A1A1A !important;
+}
+html.theme-light [style*="border: 2px solid rgb(255, 112, 166)"] {
+  border-color: #1A1A1A !important;
+}
+html.theme-light [style*="border: 1px solid rgb(255, 112, 166)"] {
+  border-color: #1A1A1A !important;
+}
+html.theme-light [style*="box-shadow: 4px 4px 0 rgb(255, 176, 204)"],
+html.theme-light [style*="box-shadow: 2px 2px 0 rgb(255, 176, 204)"],
+html.theme-light [style*="box-shadow: 3px 3px 0 rgb(255, 176, 204)"] {
+  box-shadow: none !important;
+}
+html.theme-light [style*="color: rgb(204, 32, 112)"],
+html.theme-light [style*="color: #CC2070"] {
+  color: #1A1A1A !important;
+}
+html.theme-light [style*="color: rgb(232, 128, 168)"],
+html.theme-light [style*="color: #E880A8"] {
+  color: #8A8A8A !important;
+}
+html.theme-light [style*="border-color: rgb(255, 176, 204)"],
+html.theme-light [style*="border: 1px dashed rgb(255, 176, 204)"] {
+  border-color: #8A8A8A !important;
 }
 
 /* Editorial dividers */

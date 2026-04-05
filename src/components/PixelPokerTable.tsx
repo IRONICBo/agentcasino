@@ -6,6 +6,7 @@
  */
 
 import { ClientGameState } from '@/lib/types';
+import { useEffect, useState } from 'react';
 
 interface PixelPokerTableProps {
   gameState: ClientGameState | null;
@@ -30,20 +31,30 @@ const fmt = (n: number) =>
   : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K`
   : String(n);
 
-// Pink palette
-const P = {
-  bg: '#FFF0F5',
-  surface: '#FFE0EB',
-  border: '#FF70A6',
-  borderLight: '#FFB0CC',
-  text: '#CC2070',
-  textLight: '#E880A8',
-  card: '#FF70A6',
-  cardInner: '#FFB0CC',
-  white: '#fff',
+// Pink palette (modern)
+const P_MODERN = {
+  bg: '#FFF0F5', surface: '#FFE0EB', border: '#FF70A6', borderLight: '#FFB0CC',
+  text: '#CC2070', textLight: '#E880A8', card: '#FF70A6', cardInner: '#FFB0CC', white: '#fff',
+};
+// Editorial palette (classic)
+const P_CLASSIC = {
+  bg: '#FFFFFF', surface: '#F6F5F0', border: '#1A1A1A', borderLight: '#8A8A8A',
+  text: '#1A1A1A', textLight: '#4A4A4A', card: '#1A1A1A', cardInner: '#4A4A4A', white: '#fff',
 };
 
 export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTableProps) {
+  const [isClassic, setIsClassic] = useState(false);
+  useEffect(() => {
+    const check = () => setIsClassic(document.documentElement.classList.contains('theme-light'));
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+  const P = isClassic ? P_CLASSIC : P_MODERN;
+  const radius = isClassic ? 0 : 16;
+  const cardRadius = isClassic ? 0 : 6;
+
   const isActive = gameState && gameState.phase !== 'waiting' && gameState.players.length > 0;
   const maxSeats = 6;
   const emptySeats = seatPositions(maxSeats);
@@ -55,9 +66,9 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
       style={{
         textDecoration: 'none', color: 'inherit',
         border: `2px solid ${P.border}`,
-        borderRadius: 16,
+        borderRadius: radius,
         background: P.white,
-        boxShadow: `3px 3px 0 ${P.border}`,
+        boxShadow: isClassic ? `3px 3px 0 #1A1A1A` : `3px 3px 0 ${P.border}`,
         cursor: isActive ? 'pointer' : 'default',
         overflow: 'hidden',
       }}
@@ -129,7 +140,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                         <div key={i} style={{
                           width: 32, height: 44,
                           border: `2px solid ${P.border}`,
-                          borderRadius: 6,
+                          borderRadius: cardRadius,
                           background: '#fff',
                           boxShadow: `2px 2px 0 ${P.borderLight}`,
                           display: 'flex', flexDirection: 'column',
@@ -145,7 +156,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                       <div key={`e${i}`} style={{
                         width: 32, height: 44,
                         border: `2px solid ${P.border}`,
-                        borderRadius: 6,
+                        borderRadius: cardRadius,
                         background: P.card,
                         boxShadow: `2px 2px 0 ${P.borderLight}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -188,7 +199,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                       <div key={i} style={{
                         width: 28, height: 38,
                         border: `2px solid ${P.border}`,
-                        borderRadius: 6,
+                        borderRadius: cardRadius,
                         background: P.card,
                         boxShadow: `2px 2px 0 ${P.borderLight}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -231,7 +242,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                 }}>
                   <div style={{
                     border: `2px solid ${P.border}`,
-                    borderRadius: 10,
+                    borderRadius: isClassic ? 0 : 10,
                     background: isCurrent ? P.card : P.white,
                     color: isCurrent ? P.white : P.text,
                     boxShadow: `2px 2px 0 ${P.borderLight}`,
@@ -265,7 +276,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
                 <div style={{
                   width: 32, height: 32,
                   border: `2px solid ${P.border}`,
-                  borderRadius: 10,
+                  borderRadius: isClassic ? 0 : 10,
                   background: P.surface,
                   boxShadow: `2px 2px 0 ${P.borderLight}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -284,7 +295,7 @@ export function PixelPokerTable({ gameState, roomName, roomId }: PixelPokerTable
             }}>
               <div style={{
                 border: `2px solid ${P.border}`,
-                borderRadius: 16,
+                borderRadius: radius,
                 background: '#fff',
                 boxShadow: `3px 3px 0 ${P.borderLight}`,
                 padding: '8px 16px',
