@@ -5,7 +5,7 @@
  */
 
 import type { PlayerAction } from './types';
-import { saveAgentStats, loadAllAgentStats, loadAgentStats } from './casino-db';
+import { saveAgentStats, loadAgentStats } from './casino-db';
 
 // ---------------------------------------------------------------------------
 // Raw counters (persisted across hands)
@@ -217,39 +217,7 @@ export function trackHandEnd(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Cold-start hydration — load persisted stats from Supabase
-// ---------------------------------------------------------------------------
-
-export async function hydrateAgentStats(): Promise<void> {
-  try {
-    const rows = await loadAllAgentStats();
-    for (const [agentId, row] of rows) {
-      // Only overwrite if the in-memory count is lower (DB has more complete data)
-      const existing = agentStats.get(agentId);
-      if (!existing || row.handsPlayed > existing.handsPlayed) {
-        agentStats.set(agentId, {
-          handsPlayed:       row.handsPlayed,
-          vpipHands:         row.vpipHands,
-          pfrHands:          row.pfrHands,
-          aggressiveActions: row.aggressiveActions,
-          passiveActions:    row.passiveActions,
-          showdownHands:     row.showdownHands,
-          showdownWins:      row.showdownWins,
-          cbetOpportunities: row.cbetOpportunities,
-          cbetMade:          row.cbetMade,
-          // currentStreak is volatile — keep in-memory value if present, else 0
-          currentStreak:     existing?.currentStreak ?? 0,
-          bestWinStreak:     Math.max(row.bestWinStreak, existing?.bestWinStreak ?? 0),
-          worstLossStreak:   Math.max(row.worstLossStreak, existing?.worstLossStreak ?? 0),
-        });
-      }
-    }
-    console.log(`[stats] hydrated ${rows.size} agents from DB`);
-  } catch (e) {
-    console.error('[stats] hydrateAgentStats failed:', e);
-  }
-}
+// hydrateAgentStats removed — DB-first architecture reads on demand
 
 // ---------------------------------------------------------------------------
 // Computed stats for API

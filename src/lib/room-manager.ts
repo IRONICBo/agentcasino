@@ -1,9 +1,13 @@
-import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer } from './types';
+import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer, GameState } from './types';
 import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
-import { getOrCreateAgent, deductChips, addChips, getAgent } from './chips';
-import { loadRoomPlayers, loadAllRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS, cleanStaleRoomPlayers, saveRoomState, deleteRoomState, loadAllRoomStates } from './casino-db';
+import { deductChips, addChips, getAgent } from './chips';
+import {
+  loadRoomPlayers, saveRoomPlayer, removeRoomPlayer, STALE_MS,
+  cleanStaleRoomPlayers, saveRoomState, deleteRoomState,
+  loadRoomState, saveRoomStateWithVersion, deductChipsAtomic, addChipsAtomic,
+  loadAllRoomPlayers,
+} from './casino-db';
 import { calculateEquity } from './equity';
-import { hydrateAgentStats } from './stats';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
 
@@ -42,41 +46,39 @@ export const STAKE_CATEGORIES: Omit<StakeCategory, 'tables'>[] = [
 
 // ─── Fixed table counts per category ─────────────────────────────────────────
 
-/** Minimum tables per category — auto-scaling adds more when needed */
 const MIN_TABLES: Record<string, number> = {
   low:  2,
   mid:  2,
   high: 2,
 };
 
-/** Table is "full enough" to trigger scaling when this % of seats are taken */
 const SCALE_UP_THRESHOLD = 0.7;
 
 // ─── Fun deterministic table names ───────────────────────────────────────────
 
 const TABLE_NAMES: Record<string, string[]> = {
   low: [
-    '🃏 Dead Man\'s Hand',
-    '🌙 Midnight Felt',
-    '🎲 Ante Up Alley',
-    '🐍 Snake Eyes',
-    '🍀 Lucky River',
-    '🌊 The Flop House',
+    '\u{1F0CF} Dead Man\'s Hand',
+    '\u{1F319} Midnight Felt',
+    '\u{1F3B2} Ante Up Alley',
+    '\u{1F40D} Snake Eyes',
+    '\u{1F340} Lucky River',
+    '\u{1F30A} The Flop House',
   ],
   mid: [
-    '🦁 The Lion\'s Den',
-    '🔥 Blaze & Raise',
-    '⚡ Thunder Pot',
-    '🎯 Sharpshooter\'s Table',
+    '\u{1F981} The Lion\'s Den',
+    '\u{1F525} Blaze & Raise',
+    '\u26A1 Thunder Pot',
+    '\u{1F3AF} Sharpshooter\'s Table',
   ],
   high: [
-    '💀 The Graveyard Shift',
-    '👑 High Roller Throne',
-    '🌑 Dark Money Room',
+    '\u{1F480} The Graveyard Shift',
+    '\u{1F451} High Roller Throne',
+    '\u{1F311} Dark Money Room',
   ],
 };
 
-// ─── Room store (global singleton) ───────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface ChatMsg {
   agentId: string;
@@ -93,58 +95,65 @@ interface ExtendedRoom extends Room {
   chatLog?: ChatMsg[];
 }
 
-const globalAny = globalThis as any;
-if (!globalAny.__casino_rooms) {
-  globalAny.__casino_rooms = new Map<string, ExtendedRoom>();
-}
-const rooms: Map<string, ExtendedRoom> = globalAny.__casino_rooms;
-
-// ─── Hydration gate (blocks reads until cold-start restore completes) ────────
-
-let hydrationResolve: (() => void) | null = null;
-const hydrationReady: Promise<void> = globalAny.__casino_hydration_ready ??= new Promise<void>(r => { hydrationResolve = r; });
-// If the promise was already created in a previous hot-reload, resolve is null — that's fine, it's already resolved.
-if (!globalAny.__casino_hydration_resolve && hydrationResolve) {
-  globalAny.__casino_hydration_resolve = hydrationResolve;
-}
-
-/** Wait for cold-start hydration to finish before serving data */
-export function waitForHydration(): Promise<void> {
-  return hydrationReady;
-}
-
-// ─── Action timeout store (global singleton, survives hot reloads) ────────────
-
-const globalAny2 = globalThis as any;
-if (!globalAny2.__casino_timeouts) {
-  globalAny2.__casino_timeouts = new Map<string, NodeJS.Timeout>();
-}
-const actionTimeouts: Map<string, NodeJS.Timeout> = globalAny2.__casino_timeouts;
-
-// ─── Consecutive timeout tracking ─────────────────────────────────────────────
-
-if (!globalAny2.__casino_consec_timeouts) {
-  globalAny2.__casino_consec_timeouts = new Map<string, number>();
-}
-const consecutiveTimeouts: Map<string, number> = globalAny2.__casino_consec_timeouts;
-
 // ─── Turn timer constant ───────────────────────────────────────────────────────
 
 const TURN_TIMEOUT_MS = 30_000;
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
+// ─── Showdown delay (ms before next hand starts) ────────────────────────────
+const SHOWDOWN_DELAY_MS = 3_000;
 
-/** Deterministic room ID — stable across cold starts */
-function roomId(categoryId: string, tableNumber: number): string {
+// ─── Chat (in-memory, ephemeral by design) ─────────────────────────────────
+
+const globalAny = globalThis as any;
+if (!globalAny.__casino_chat) globalAny.__casino_chat = new Map<string, ChatMsg[]>();
+const chatStore: Map<string, ChatMsg[]> = globalAny.__casino_chat;
+
+const MAX_CHAT = 100;
+
+export function addChatMessage(roomId: string, agentId: string, name: string, message: string): ChatMsg | null {
+  // Verify room ID parses correctly
+  if (!parseRoomId(roomId)) return null;
+  let log = chatStore.get(roomId);
+  if (!log) { log = []; chatStore.set(roomId, log); }
+  const msg: ChatMsg = { agentId, name, message, timestamp: Date.now() };
+  log.push(msg);
+  if (log.length > MAX_CHAT) chatStore.set(roomId, log.slice(-MAX_CHAT));
+  return msg;
+}
+
+export function getChatMessages(roomId: string, limit = 50): ChatMsg[] {
+  const log = chatStore.get(roomId);
+  if (!log) return [];
+  return log.slice(-limit);
+}
+
+// ─── Equity cache ──────────────────────────────────────────────────────────
+
+const equityCache = new Map<string, { version: number; equity: Map<string, number> }>();
+
+// ─── Room ID helpers ─────────────────────────────────────────────────────────
+
+function makeRoomId(categoryId: string, tableNumber: number): string {
   return `casino_${categoryId}_${tableNumber}`;
 }
 
-function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom {
+/** Parse room ID like "casino_low_3" into { categoryId: "low", tableNumber: 3 } */
+export function parseRoomId(id: string): { categoryId: string; tableNumber: number } | null {
+  const m = id.match(/^casino_(\w+)_(\d+)$/);
+  if (!m) return null;
+  const categoryId = m[1];
+  if (!STAKE_CATEGORIES.find(c => c.id === categoryId)) return null;
+  return { categoryId, tableNumber: parseInt(m[2], 10) };
+}
+
+// ─── Build room from constants ────────────────────────────────────────────────
+
+function buildRoomShell(categoryId: string, tableNumber: number): ExtendedRoom {
   const cat = STAKE_CATEGORIES.find(c => c.id === categoryId)!;
   const names = TABLE_NAMES[categoryId] ?? [];
   const name = names[tableNumber - 1] ?? `Table ${tableNumber}`;
-  const room: ExtendedRoom = {
-    id: roomId(categoryId, tableNumber),
+  return {
+    id: makeRoomId(categoryId, tableNumber),
     name,
     categoryId,
     tableNumber,
@@ -159,210 +168,460 @@ function createFixedTable(categoryId: string, tableNumber: number): ExtendedRoom
     stateVersion: 0,
     turnDeadlineMs: null,
   };
-  rooms.set(room.id, room);
+}
+
+// ─── Load room from DB ────────────────────────────────────────────────────────
+
+/**
+ * Loads a room by building its shell from constants and overlaying DB state.
+ * Returns null only if the room ID is invalid.
+ */
+async function loadRoom(roomId: string): Promise<ExtendedRoom | null> {
+  const parsed = parseRoomId(roomId);
+  if (!parsed) return null;
+
+  const room = buildRoomShell(parsed.categoryId, parsed.tableNumber);
+
+  // Load game state from DB
+  const saved = await loadRoomState(roomId);
+  if (saved?.game) {
+    const savedGame = saved.game as any;
+    if (savedGame.phase && savedGame.phase !== 'waiting') {
+      const { _turnDeadlineMs, _timeoutCounts, _nextHandAt, ...gameState } = savedGame;
+      room.game = gameState;
+      room.stateVersion = saved.stateVersion;
+      if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
+        room.turnDeadlineMs = _turnDeadlineMs;
+      }
+    } else if (savedGame.phase === 'waiting') {
+      // Restore waiting state with players
+      const { _turnDeadlineMs, _timeoutCounts, _nextHandAt, ...gameState } = savedGame;
+      room.game = gameState;
+      room.stateVersion = saved.stateVersion;
+    }
+  }
+
   return room;
 }
 
-/** Re-seat a player from DB without deducting chips (cold-start recovery only) */
-function rehydratePlayer(room: ExtendedRoom, agentId: string, agentName: string, chips: number): void {
-  if (!Number.isFinite(chips) || chips <= 0) return; // reject NaN / Infinity / non-positive
-  if (!room.game) room.game = createGame(room.smallBlind, room.bigBlind);
-  if (room.game.players.find(p => p.agentId === agentId)) return; // already seated
-  if (room.game.players.length >= room.maxPlayers) return;
-  const taken = new Set(room.game.players.map(p => p.seatIndex));
-  let seat = -1;
-  for (let i = 0; i < room.maxPlayers; i++) { if (!taken.has(i)) { seat = i; break; } }
-  if (seat === -1) return;
-  // Ensure agent exists in memory
-  getOrCreateAgent(agentId, agentName);
-  addPlayer(room.game, agentId, agentName, chips, seat);
+// ─── Optimistic lock save with retry ─────────────────────────────────────────
+
+async function saveWithRetry(
+  roomId: string,
+  buildState: (room: ExtendedRoom) => Promise<{ game: GameState | null; error?: string }>,
+  maxRetries = 3,
+): Promise<{ success: boolean; room?: ExtendedRoom; error?: string }> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const room = await loadRoom(roomId);
+    if (!room) return { success: false, error: 'Room not found' };
+
+    const result = await buildState(room);
+    if (result.error) return { success: false, error: result.error };
+
+    if (!result.game) {
+      // No game to save — delete room state
+      await deleteRoomState(roomId);
+      return { success: true, room };
+    }
+
+    // Build snapshot with metadata
+    const snapshot: any = { ...result.game };
+    if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
+
+    const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
+    if (saveResult.success) {
+      room.game = result.game;
+      room.stateVersion = saveResult.newVersion;
+      return { success: true, room };
+    }
+
+    // Version conflict — retry
+    console.log(`[rooms] version conflict on ${roomId}, attempt ${attempt + 1}/${maxRetries}`);
+  }
+
+  return { success: false, error: 'Conflict: too many concurrent updates, please retry' };
 }
 
-export function initDefaultRooms(): void {
-  for (const cat of STAKE_CATEGORIES) {
-    const existing = Array.from(rooms.values()).filter(r => r.categoryId === cat.id);
-    const minCount = MIN_TABLES[cat.id] ?? 1;
-    for (let i = existing.length + 1; i <= minCount; i++) {
-      createFixedTable(cat.id, i);
-    }
-  }
-  // Restore seated players from Supabase, then open the hydration gate
-  hydrateFromDB().finally(() => {
-    const resolve = globalAny.__casino_hydration_resolve;
-    if (resolve) { resolve(); globalAny.__casino_hydration_resolve = null; }
-  });
+// ─── Enforce timeout (deadline-based) ─────────────────────────────────────────
 
-  // Evict ghost players every 2 minutes (in-process, not relying on cron)
-  if (!globalAny.__casino_evict_interval) {
-    globalAny.__casino_evict_interval = setInterval(() => {
-      evictGhostPlayers().catch(e => console.error('[rooms] periodic evict failed:', e));
-    }, 2 * 60 * 1000);
+/**
+ * Check if the current player's turn has expired. If so, auto-fold.
+ * Returns true if a timeout was enforced.
+ */
+async function enforceTimeout(room: ExtendedRoom): Promise<boolean> {
+  if (!room.game || room.game.phase === 'waiting' || room.game.phase === 'showdown') return false;
+
+  const gameAny = room.game as any;
+  const deadline = gameAny._turnDeadlineMs ?? room.turnDeadlineMs;
+  if (!deadline || Date.now() < deadline) return false;
+
+  const currentPlayer = room.game.players[room.game.currentPlayerIndex];
+  if (!currentPlayer) return false;
+
+  // Track consecutive timeouts
+  const timeoutCounts: Record<string, number> = gameAny._timeoutCounts ?? {};
+  const key = currentPlayer.agentId;
+  timeoutCounts[key] = (timeoutCounts[key] ?? 0) + 1;
+
+  if (timeoutCounts[key] >= 3) {
+    // Kick after 3 consecutive timeouts
+    console.log(`[kick] ${currentPlayer.name} kicked from ${room.id} after ${timeoutCounts[key]} consecutive timeouts`);
+    delete timeoutCounts[key];
+
+    const player = removePlayer(room.game, currentPlayer.agentId);
+    if (player) {
+      const totalReturn = player.chips + player.currentBet;
+      if (totalReturn > 0) {
+        await addChipsAtomic(currentPlayer.agentId, totalReturn);
+        room.game.pot = Math.max(0, room.game.pot - player.currentBet);
+      }
+    }
+    await removeRoomPlayer(room.id, currentPlayer.agentId);
+  } else {
+    // Auto-fold
+    console.log(`[auto-fold] ${currentPlayer.name} timed out in ${room.id} (${timeoutCounts[key]}/3)`);
+    processAction(room.game, currentPlayer.agentId, 'fold');
   }
+
+  // Update timeout tracking and new deadline in game state
+  (room.game as any)._timeoutCounts = timeoutCounts;
+
+  // Set new deadline for next player if game is still active
+  const phase = room.game.phase as string;
+  if (phase !== 'waiting' && phase !== 'showdown') {
+    room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+    (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
+  } else {
+    room.turnDeadlineMs = null;
+  }
+
+  return true;
 }
 
 /**
- * Auto-scale: if all tables in a category are ≥70% full, add one more.
- * Called after every joinRoom. Returns the new room ID if created, or null.
+ * Public enforceTimeout: loads room from DB, enforces, saves.
+ * Called from route.ts before returning game_state or processing play.
  */
-function autoScaleUp(categoryId: string): string | null {
-  const catRooms = Array.from(rooms.values()).filter(r => r.categoryId === categoryId);
-  const allBusy = catRooms.every(r => {
-    const playerCount = r.game?.players.length ?? 0;
-    return playerCount / r.maxPlayers >= SCALE_UP_THRESHOLD;
+export async function enforceTimeoutForRoom(roomId: string): Promise<void> {
+  const room = await loadRoom(roomId);
+  if (!room || !room.game) return;
+
+  let changed = await enforceTimeout(room);
+  // Might need multiple consecutive timeouts if multiple players timed out
+  while (changed) {
+    // Save intermediate state
+    const snapshot: any = { ...room.game };
+    if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
+    const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
+    if (saveResult.success) {
+      room.stateVersion = saveResult.newVersion;
+    }
+    changed = await enforceTimeout(room);
+  }
+}
+
+// ─── Join / Leave ─────────────────────────────────────────────────────────────
+
+export async function joinRoom(roomId: string, agentId: string, agentName: string, buyIn: number): Promise<string | null> {
+  const parsed = parseRoomId(roomId);
+  if (!parsed) return 'Room not found';
+
+  const cat = STAKE_CATEGORIES.find(c => c.id === parsed.categoryId);
+  if (!cat) return 'Room not found';
+
+  if (!Number.isFinite(buyIn) || buyIn < cat.minBuyIn || buyIn > cat.maxBuyIn) {
+    return `Buy-in must be between ${cat.minBuyIn.toLocaleString()} and ${cat.maxBuyIn.toLocaleString()}`;
+  }
+
+  const agent = await getAgent(agentId);
+  if (!agent) return 'Agent not found. Register first.';
+  if (agent.chips < buyIn) {
+    return `Not enough chips. You have ${agent.chips.toLocaleString()}, need ${buyIn.toLocaleString()}`;
+  }
+
+  // Deduct chips atomically FIRST
+  const newBalance = await deductChipsAtomic(agentId, buyIn);
+  if (newBalance === null) return 'Failed to deduct chips (insufficient balance or conflict)';
+
+  const result = await saveWithRetry(roomId, async (room) => {
+    if (!room.game) {
+      room.game = createGame(room.smallBlind, room.bigBlind);
+    }
+
+    if (room.game.players.length >= room.maxPlayers) {
+      return { game: null, error: 'Room is full' };
+    }
+
+    if (room.game.players.find(p => p.agentId === agentId)) {
+      return { game: null, error: 'Already at this table' };
+    }
+
+    const takenSeats = new Set(room.game.players.map(p => p.seatIndex));
+    let seatIndex = -1;
+    for (let i = 0; i < room.maxPlayers; i++) {
+      if (!takenSeats.has(i)) { seatIndex = i; break; }
+    }
+    if (seatIndex === -1) return { game: null, error: 'No seats available' };
+
+    if (!addPlayer(room.game, agentId, agentName, buyIn, seatIndex)) {
+      return { game: null, error: 'Failed to join table' };
+    }
+
+    return { game: room.game };
   });
+
+  if (!result.success) {
+    // Refund chips on failure
+    await addChipsAtomic(agentId, buyIn);
+    return result.error || 'Failed to join';
+  }
+
+  await saveRoomPlayer(roomId, agentId, agentName, buyIn);
+
+  // Auto-scale check
+  await autoScaleUp(parsed.categoryId);
+
+  return null;
+}
+
+export async function leaveRoom(roomId: string, agentId: string): Promise<void> {
+  const room = await loadRoom(roomId);
+  if (!room || !room.game) return;
+
+  const player = removePlayer(room.game, agentId);
+  if (player) {
+    const totalReturn = player.chips + player.currentBet;
+    if (totalReturn > 0) {
+      await addChipsAtomic(agentId, totalReturn);
+      room.game.pot = Math.max(0, room.game.pot - player.currentBet);
+    }
+  }
+
+  room.spectators = room.spectators.filter(id => id !== agentId);
+  await removeRoomPlayer(roomId, agentId);
+
+  // Save updated state
+  if (room.game.players.length === 0) {
+    await deleteRoomState(roomId);
+  } else {
+    const snapshot: any = { ...room.game };
+    await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
+  }
+}
+
+// ─── Game actions ─────────────────────────────────────────────────────────────
+
+export async function handleAction(
+  roomId: string,
+  agentId: string,
+  action: string,
+  amount?: number,
+  isTimeout = false,
+): Promise<string | null> {
+  const validActions = ['fold', 'check', 'call', 'raise', 'all_in'];
+  if (!validActions.includes(action)) return 'Invalid action';
+
+  const result = await saveWithRetry(roomId, async (room) => {
+    if (!room.game) return { game: null, error: 'No active game' };
+
+    // Enforce timeout before processing action
+    await enforceTimeout(room);
+
+    // Check if game ended due to timeout enforcement
+    if (!room.game || room.game.phase === 'waiting' || room.game.phase === 'showdown') {
+      // Return current state — the timeout changed things
+      return { game: room.game };
+    }
+
+    const success = processAction(room.game, agentId, action as any, amount);
+    if (!success) return { game: null, error: 'Invalid action for current game state' };
+
+    // Real action resets consecutive timeout count
+    if (!isTimeout) {
+      const timeoutCounts: Record<string, number> = (room.game as any)._timeoutCounts ?? {};
+      delete timeoutCounts[agentId];
+      (room.game as any)._timeoutCounts = timeoutCounts;
+    }
+
+    // Set turn deadline for next player
+    const actionPhase = room.game.phase as string;
+    if (actionPhase !== 'waiting' && actionPhase !== 'showdown') {
+      room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+      (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
+    } else {
+      room.turnDeadlineMs = null;
+      delete (room.game as any)._turnDeadlineMs;
+    }
+
+    // If showdown, set _nextHandAt deadline
+    if (actionPhase === 'showdown') {
+      (room.game as any)._nextHandAt = Date.now() + SHOWDOWN_DELAY_MS;
+    }
+
+    return { game: room.game };
+  });
+
+  if (!result.success) return result.error || 'Action failed';
+  return null;
+}
+
+export async function tryStartGame(roomId: string): Promise<boolean> {
+  const result = await saveWithRetry(roomId, async (room) => {
+    if (!room.game) return { game: null, error: 'no game' };
+    if (!canStartGame(room.game)) return { game: null, error: 'cannot start' };
+
+    startNewHand(room.game, roomId, room.name);
+
+    // Set turn deadline
+    room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+    (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
+    (room.game as any)._timeoutCounts = {};
+
+    return { game: room.game };
+  });
+
+  return result.success;
+}
+
+export async function tryStartNextHand(roomId: string): Promise<boolean> {
+  const result = await saveWithRetry(roomId, async (room) => {
+    if (!room.game) return { game: null, error: 'no game' };
+    if (room.game.phase !== 'showdown') return { game: null, error: 'not showdown' };
+    if (room.game.players.length < 2) return { game: null, error: 'not enough players' };
+
+    // Check if showdown delay has passed
+    const nextHandAt = (room.game as any)._nextHandAt;
+    if (nextHandAt && Date.now() < nextHandAt) {
+      return { game: null, error: 'showdown delay not elapsed' };
+    }
+
+    // Persist chip counts after each completed hand
+    for (const p of room.game.players) {
+      if (p.chips > 0) await saveRoomPlayer(roomId, p.agentId, p.name, p.chips);
+    }
+
+    // Remove busted players
+    const bustedPlayers = room.game.players.filter(p => p.chips <= 0);
+    for (const p of bustedPlayers) {
+      console.log(`[rooms] busted player ${p.name} (${p.agentId}) removed from ${roomId}`);
+      removePlayer(room.game, p.agentId);
+      await removeRoomPlayer(roomId, p.agentId);
+    }
+
+    if (room.game.players.length < 2) return { game: null, error: 'not enough players after bust' };
+
+    startNewHand(room.game);
+
+    // Set turn deadline
+    room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+    (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
+    (room.game as any)._timeoutCounts = {};
+    delete (room.game as any)._nextHandAt;
+
+    return { game: room.game };
+  });
+
+  return result.success;
+}
+
+// ─── Auto-scaling ──────────────────────────────────────────────────────────────
+
+async function autoScaleUp(categoryId: string): Promise<string | null> {
+  // Load all room players to figure out which tables have players
+  const allPlayers = await loadAllRoomPlayers();
+  const cat = STAKE_CATEGORIES.find(c => c.id === categoryId);
+  if (!cat) return null;
+
+  const minCount = MIN_TABLES[categoryId] ?? 1;
+
+  // Find all table numbers in this category (minimum tables + any with players)
+  const tableNumbers = new Set<number>();
+  for (let i = 1; i <= minCount; i++) tableNumbers.add(i);
+  for (const p of allPlayers) {
+    const parsed = parseRoomId(p.roomId);
+    if (parsed && parsed.categoryId === categoryId) {
+      tableNumbers.add(parsed.tableNumber);
+    }
+  }
+
+  // Check if all existing tables are >= 70% full
+  let allBusy = true;
+  for (const num of tableNumbers) {
+    const rid = makeRoomId(categoryId, num);
+    const playersAtTable = allPlayers.filter(p => p.roomId === rid).length;
+    if (playersAtTable / cat.maxPlayers < SCALE_UP_THRESHOLD) {
+      allBusy = false;
+      break;
+    }
+  }
+
   if (!allBusy) return null;
 
-  const nextNum = catRooms.length + 1;
-  const newRoom = createFixedTable(categoryId, nextNum);
-  console.log(`[rooms] Auto-scaled: created ${newRoom.id} (${catRooms.length} tables were ≥${SCALE_UP_THRESHOLD * 100}% full)`);
-  return newRoom.id;
+  const nextNum = Math.max(...tableNumbers) + 1;
+  const newRoomId = makeRoomId(categoryId, nextNum);
+  console.log(`[rooms] Auto-scaled: ${newRoomId} (all ${tableNumbers.size} tables were >=${SCALE_UP_THRESHOLD * 100}% full)`);
+  return newRoomId;
 }
 
 /**
  * Auto-scale down: remove empty tables beyond the minimum.
- * Called by the cleanup cron. Skips tables that have players or active games.
+ * Called by the cleanup cron.
  */
-export function autoScaleDown(): number {
+export async function autoScaleDown(): Promise<number> {
   let removed = 0;
+  const allPlayers = await loadAllRoomPlayers();
+
   for (const cat of STAKE_CATEGORIES) {
-    const catRooms = Array.from(rooms.values())
-      .filter(r => r.categoryId === cat.id)
-      .sort((a, b) => b.tableNumber - a.tableNumber); // remove highest-numbered first
     const minCount = MIN_TABLES[cat.id] ?? 1;
 
-    for (const room of catRooms) {
-      if (catRooms.length - removed <= minCount) break;
-      const playerCount = room.game?.players.length ?? 0;
-      if (playerCount === 0) {
-        rooms.delete(room.id);
+    // Find all table numbers with players or game state
+    const tableNumbers = new Set<number>();
+    for (const p of allPlayers) {
+      const parsed = parseRoomId(p.roomId);
+      if (parsed && parsed.categoryId === cat.id) {
+        tableNumbers.add(parsed.tableNumber);
+      }
+    }
+    // Add minimum tables
+    for (let i = 1; i <= minCount; i++) tableNumbers.add(i);
+
+    // Remove empty tables beyond minimum (highest numbered first)
+    const sorted = [...tableNumbers].sort((a, b) => b - a);
+    let currentCount = sorted.length;
+    for (const num of sorted) {
+      if (currentCount <= minCount) break;
+      const rid = makeRoomId(cat.id, num);
+      const hasPlayers = allPlayers.some(p => p.roomId === rid);
+      if (!hasPlayers) {
+        await deleteRoomState(rid);
+        currentCount--;
         removed++;
       }
     }
   }
+
   if (removed > 0) console.log(`[rooms] Auto-scaled down: removed ${removed} empty table(s)`);
   return removed;
 }
 
-/** Parse room ID like "casino_low_3" into { categoryId: "low", tableNumber: 3 } */
-function parseRoomId(id: string): { categoryId: string; tableNumber: number } | null {
-  const m = id.match(/^casino_(\w+)_(\d+)$/);
-  if (!m) return null;
-  return { categoryId: m[1], tableNumber: parseInt(m[2], 10) };
-}
-
-async function hydrateFromDB(): Promise<void> {
-  // Load persisted poker stats into in-memory agentStats map
-  await hydrateAgentStats();
-
-  // Restore active game states (runs in parallel with player hydration)
-  const roomStatesPromise = loadAllRoomStates();
-
-  try {
-    const allPlayers = await loadAllRoomPlayers();
-    const now = Date.now();
-
-    // Group players by room
-    const byRoom = new Map<string, typeof allPlayers>();
-    for (const p of allPlayers) {
-      const list = byRoom.get(p.roomId) || [];
-      list.push(p);
-      byRoom.set(p.roomId, list);
-    }
-
-    for (const [rid, players] of byRoom) {
-      // If room doesn't exist in memory, create it (auto-scaled table from before cold start)
-      if (!rooms.has(rid)) {
-        const parsed = parseRoomId(rid);
-        if (parsed && STAKE_CATEGORIES.find(c => c.id === parsed.categoryId)) {
-          createFixedTable(parsed.categoryId, parsed.tableNumber);
-          console.log(`[rooms] Discovered dynamic table ${rid} from DB`);
-        } else {
-          continue; // unknown room format, skip
-        }
-      }
-
-      const room = rooms.get(rid)!;
-      const fresh = players.filter(p => p.chips > 0 && (now - p.updatedAt) < STALE_MS);
-      const stale = players.filter(p => p.chips <= 0 || (now - p.updatedAt) >= STALE_MS);
-
-      for (const p of fresh) {
-        rehydratePlayer(room, p.agentId, p.agentName, p.chips);
-      }
-      for (const p of stale) {
-        removeRoomPlayer(rid, p.agentId);
-      }
-      if (fresh.length > 0) {
-        console.log(`[rooms] Restored ${fresh.length} player(s) to ${rid}`);
-      }
-    }
-  } catch (e) {
-    console.error('[rooms] hydrateFromDB failed:', e);
-  }
-
-  // Restore active game states (phase/cards/pot) from DB
-  try {
-    const roomStates = await roomStatesPromise;
-    for (const [rid, saved] of roomStates) {
-      const room = rooms.get(rid);
-      if (!room) continue;
-      const savedGame = saved.game as any;
-      if (!savedGame || !savedGame.phase || savedGame.phase === 'waiting') continue;
-      // Only restore if DB version is newer than what we already have in memory
-      if (saved.stateVersion <= room.stateVersion) continue;
-      // Strip internal metadata field before assigning to room.game
-      const { _turnDeadlineMs, ...gameState } = savedGame;
-      room.game = gameState;
-      room.stateVersion = saved.stateVersion;
-      // Restore turn deadline so cross-instance countdown is accurate
-      if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
-        room.turnDeadlineMs = _turnDeadlineMs;
-      }
-      console.log(`[rooms] Restored active game for ${rid} (phase=${savedGame.phase}, v${saved.stateVersion})`);
-      // Schedule turn timeout if a hand is in progress
-      if (savedGame.phase !== 'showdown') {
-        scheduleActionTimeout(rid);
-      }
-    }
-  } catch (e) {
-    console.error('[rooms] game state hydration failed:', e);
-  }
-}
-
 // ─── Lookup ───────────────────────────────────────────────────────────────────
 
-export function getRoom(id: string): ExtendedRoom | undefined {
-  return rooms.get(id);
+export async function getRoom(id: string): Promise<ExtendedRoom | null> {
+  return loadRoom(id);
 }
 
 /** Returns the roomId of the first room where agentId is seated, or null */
-export function getAgentRoom(agentId: string): string | null {
-  for (const [id, room] of rooms) {
-    if (room.game?.players.some(p => p.agentId === agentId)) return id;
-  }
-  return null;
+export async function getAgentRoom(agentId: string): Promise<string | null> {
+  const allPlayers = await loadAllRoomPlayers();
+  const found = allPlayers.find(p => p.agentId === agentId);
+  return found?.roomId ?? null;
 }
 
-// ─── State version helpers ─────────────────────────────────────────────────────
+// ─── State version ────────────────────────────────────────────────────────────
 
-export function bumpVersion(roomId: string): void {
-  const room = rooms.get(roomId);
-  if (!room) return;
-  room.stateVersion = (room.stateVersion ?? 0) + 1;
-  // Persist game state after every action so cross-instance polls and
-  // cold-start restarts always have the latest hand state.
-  // Include turnDeadlineMs so other instances can show the same countdown.
-  if (room.game) {
-    const snapshot = room.turnDeadlineMs
-      ? { ...room.game, _turnDeadlineMs: room.turnDeadlineMs }
-      : room.game;
-    saveRoomState(roomId, snapshot, room.stateVersion);
-  } else {
-    deleteRoomState(roomId);
-  }
-}
-
-export function getRoomStateVersion(roomId: string): number {
-  return rooms.get(roomId)?.stateVersion ?? 0;
+export async function getRoomStateVersion(roomId: string): Promise<number> {
+  const saved = await loadRoomState(roomId);
+  return saved?.stateVersion ?? 0;
 }
 
 /** Long-poll: wait up to maxWaitMs for stateVersion to exceed sinceVersion. */
@@ -371,48 +630,81 @@ export async function waitForStateChange(
   sinceVersion: number,
   maxWaitMs = 8_000,
 ): Promise<number> {
-  const interval = 300;
+  const interval = 500;
   const deadline = Date.now() + maxWaitMs;
   while (Date.now() < deadline) {
-    const current = getRoomStateVersion(roomId);
+    const current = await getRoomStateVersion(roomId);
     if (current > sinceVersion) return current;
     await new Promise<void>(r => setTimeout(r, interval));
   }
-  return getRoomStateVersion(roomId);
+  return await getRoomStateVersion(roomId);
 }
 
 // ─── Listing ──────────────────────────────────────────────────────────────────
 
-function toRoomInfo(r: ExtendedRoom): RoomInfo {
-  const players = r.game?.players ?? [];
+function toRoomInfo(room: ExtendedRoom, playerCount: number): RoomInfo {
+  const players = room.game?.players ?? [];
   return {
-    id: r.id,
-    name: r.name,
-    playerCount: players.length,
-    maxPlayers: r.maxPlayers,
-    smallBlind: r.smallBlind,
-    bigBlind: r.bigBlind,
-    minBuyIn: r.minBuyIn,
-    maxBuyIn: r.maxBuyIn,
-    categoryId: r.categoryId,
-    tableNumber: r.tableNumber,
-    createdAt: r.createdAt,
-    pot: r.game?.pot ?? 0,
+    id: room.id,
+    name: room.name,
+    playerCount,
+    maxPlayers: room.maxPlayers,
+    smallBlind: room.smallBlind,
+    bigBlind: room.bigBlind,
+    minBuyIn: room.minBuyIn,
+    maxBuyIn: room.maxBuyIn,
+    categoryId: room.categoryId,
+    tableNumber: room.tableNumber,
+    createdAt: room.createdAt,
+    pot: room.game?.pot ?? 0,
     totalChips: players.reduce((s, p) => s + p.chips, 0),
   };
 }
 
-export function listRooms(): RoomInfo[] {
-  return Array.from(rooms.values()).map(toRoomInfo);
+export async function listRooms(): Promise<RoomInfo[]> {
+  const allPlayers = await loadAllRoomPlayers();
+  const playersByRoom = new Map<string, number>();
+  for (const p of allPlayers) {
+    playersByRoom.set(p.roomId, (playersByRoom.get(p.roomId) ?? 0) + 1);
+  }
+
+  const rooms: RoomInfo[] = [];
+
+  for (const cat of STAKE_CATEGORIES) {
+    const minCount = MIN_TABLES[cat.id] ?? 1;
+
+    // Collect all table numbers: minimum + any with players
+    const tableNumbers = new Set<number>();
+    for (let i = 1; i <= minCount; i++) tableNumbers.add(i);
+    for (const p of allPlayers) {
+      const parsed = parseRoomId(p.roomId);
+      if (parsed && parsed.categoryId === cat.id) {
+        tableNumbers.add(parsed.tableNumber);
+      }
+    }
+
+    for (const num of [...tableNumbers].sort((a, b) => a - b)) {
+      const rid = makeRoomId(cat.id, num);
+      const shell = buildRoomShell(cat.id, num);
+      const count = playersByRoom.get(rid) ?? 0;
+
+      // Load game state for pot info
+      const saved = await loadRoomState(rid);
+      if (saved?.game) {
+        const g = saved.game as any;
+        shell.game = g;
+        shell.stateVersion = saved.stateVersion;
+      }
+
+      rooms.push(toRoomInfo(shell, count));
+    }
+  }
+
+  return rooms;
 }
 
-/**
- * Recommended rooms for browser users:
- * - All rooms that have at least 1 player seated
- * - Plus 1 empty "open" table per category (the lowest-numbered empty one)
- */
-export function listRecommendedRooms(): RoomInfo[] {
-  const all = Array.from(rooms.values()).map(toRoomInfo);
+export async function listRecommendedRooms(): Promise<RoomInfo[]> {
+  const all = await listRooms();
   const active = all.filter(r => r.playerCount > 0);
   const activeIds = new Set(active.map(r => r.id));
 
@@ -432,16 +724,15 @@ export function listRecommendedRooms(): RoomInfo[] {
   return [...active, ...openSeats].sort((a, b) => b.playerCount - a.playerCount);
 }
 
-export function listCategories(recommended = false): (Omit<StakeCategory, 'tables'> & { tables: RoomInfo[] })[] {
+export async function listCategories(recommended = false): Promise<(Omit<StakeCategory, 'tables'> & { tables: RoomInfo[] })[]> {
+  const all = await listRooms();
+
   return STAKE_CATEGORIES.map(cat => {
-    let tables = Array.from(rooms.values())
+    let tables = all
       .filter(r => r.categoryId === cat.id)
-      .map(toRoomInfo)
-      // Sort by pot descending, then totalChips descending, then table number
       .sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0) || (a.tableNumber ?? 0) - (b.tableNumber ?? 0));
 
     if (recommended) {
-      // Active tables + 1 empty seat per category
       const active = tables.filter(t => t.playerCount > 0);
       const firstEmpty = tables.find(t => t.playerCount === 0);
       tables = active.length > 0
@@ -453,258 +744,28 @@ export function listCategories(recommended = false): (Omit<StakeCategory, 'table
   });
 }
 
-/** Remove in-memory players who are stale or missing from Supabase */
-export async function evictGhostPlayers(): Promise<number> {
-  let evicted = 0;
-  const now = Date.now();
-  for (const room of rooms.values()) {
-    if (!room.game || room.game.players.length === 0) continue;
-    const dbPlayers = await loadRoomPlayers(room.id);
-    const dbMap = new Map(dbPlayers.map(p => [p.agentId, p]));
-    for (const p of [...room.game.players]) {
-      const dbRow = dbMap.get(p.agentId);
-      // Evict if: not in DB at all, OR DB row is stale (no heartbeat within STALE_MS)
-      if (!dbRow || (now - dbRow.updatedAt) >= STALE_MS) {
-        const evictedPlayer = removePlayer(room.game, p.agentId);
-        // Return chips on eviction — same as voluntary leave
-        if (evictedPlayer) {
-          const totalReturn = evictedPlayer.chips + evictedPlayer.currentBet;
-          if (totalReturn > 0) {
-            addChips(p.agentId, totalReturn);
-            room.game.pot = Math.max(0, room.game.pot - evictedPlayer.currentBet);
-          }
-        }
-        if (dbRow) removeRoomPlayer(room.id, p.agentId);
-        evicted++;
-        console.log(`[rooms] evicted ghost player ${p.agentId} from ${room.id} (${dbRow ? 'stale' : 'missing'}) — returned ${evictedPlayer?.chips ?? 0} chips`);
-      }
-    }
-    if (room.game.players.length === 0) room.game = null;
-  }
-  return evicted;
-}
-
-// ─── Join / Leave ─────────────────────────────────────────────────────────────
-
-export function joinRoom(roomId: string, agentId: string, agentName: string, buyIn: number): string | null {
-  const room = rooms.get(roomId);
-  if (!room) return 'Room not found';
-
-  if (!Number.isFinite(buyIn) || buyIn < room.minBuyIn || buyIn > room.maxBuyIn) {
-    return `Buy-in must be between ${room.minBuyIn.toLocaleString()} and ${room.maxBuyIn.toLocaleString()}`;
-  }
-
-  const agent = getAgent(agentId);
-  if (!agent) return 'Agent not found. Register first.';
-  if (agent.chips < buyIn) {
-    return `Not enough chips. You have ${agent.chips.toLocaleString()}, need ${buyIn.toLocaleString()}`;
-  }
-
-  if (!room.game) {
-    room.game = createGame(room.smallBlind, room.bigBlind);
-  }
-
-  if (room.game.players.length >= room.maxPlayers) {
-    return 'Room is full';
-  }
-
-  if (room.game.players.find(p => p.agentId === agentId)) {
-    return 'Already at this table';
-  }
-
-  const takenSeats = new Set(room.game.players.map(p => p.seatIndex));
-  let seatIndex = -1;
-  for (let i = 0; i < room.maxPlayers; i++) {
-    if (!takenSeats.has(i)) { seatIndex = i; break; }
-  }
-  if (seatIndex === -1) return 'No seats available';
-
-  if (!deductChips(agentId, buyIn)) return 'Failed to deduct chips';
-
-  if (!addPlayer(room.game, agentId, agentName, buyIn, seatIndex)) {
-    addChips(agentId, buyIn);
-    return 'Failed to join table';
-  }
-
-  saveRoomPlayer(roomId, agentId, agentName, buyIn);
-  bumpVersion(roomId);
-
-  // Auto-scale: create a new table if all tables in this category are getting full
-  autoScaleUp(room.categoryId);
-
-  return null;
-}
-
-export function leaveRoom(roomId: string, agentId: string): void {
-  const room = rooms.get(roomId);
-  if (!room || !room.game) return;
-
-  const player = removePlayer(room.game, agentId);
-  if (player) {
-    // Return ALL chips: remaining stack + any current bet still in play
-    const totalReturn = player.chips + player.currentBet;
-    if (totalReturn > 0) {
-      addChips(agentId, totalReturn);
-      // Reduce pot by the player's current bet (they're leaving with it)
-      room.game.pot = Math.max(0, room.game.pot - player.currentBet);
-    }
-  }
-
-  room.spectators = room.spectators.filter(id => id !== agentId);
-  removeRoomPlayer(roomId, agentId);
-
-  // Cancel any pending timeout if there aren't enough players left
-  if (!room.game || room.game.players.length < 2) {
-    clearActionTimeout(roomId);
-  }
-
-  bumpVersion(roomId);
-}
-
-// ─── Action timeout ───────────────────────────────────────────────────────────
-
-export function clearActionTimeout(roomId: string): void {
-  const room = rooms.get(roomId);
-  if (room) room.turnDeadlineMs = null;
-  const existing = actionTimeouts.get(roomId);
-  if (existing !== undefined) {
-    clearTimeout(existing);
-    actionTimeouts.delete(roomId);
-  }
-}
-
-export function scheduleActionTimeout(roomId: string): void {
-  const room = rooms.get(roomId);
-  if (!room || !room.game) {
-    clearActionTimeout(roomId);
-    return;
-  }
-
-  const game = room.game;
-
-  if (game.phase === 'waiting' || game.phase === 'showdown') {
-    clearActionTimeout(roomId);
-    return;
-  }
-
-  const currentPlayer = game.players[game.currentPlayerIndex];
-  if (!currentPlayer) {
-    clearActionTimeout(roomId);
-    return;
-  }
-
-  // Clear any existing timeout before setting a new one
-  clearActionTimeout(roomId);
-
-  // Expose deadline so agents can count down
-  room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
-  bumpVersion(roomId);
-
-  const timeout = setTimeout(() => {
-    actionTimeouts.delete(roomId);
-    if (room) room.turnDeadlineMs = null;
-
-    const key = `${roomId}:${currentPlayer.agentId}`;
-    const count = (consecutiveTimeouts.get(key) ?? 0) + 1;
-    consecutiveTimeouts.set(key, count);
-
-    if (count >= 3) {
-      // Kick after 3 consecutive timeouts
-      consecutiveTimeouts.delete(key);
-      console.log(`[kick] ${currentPlayer.name} kicked from ${roomId} after ${count} consecutive timeouts`);
-      leaveRoom(roomId, currentPlayer.agentId);
-    } else {
-      console.log(`[auto-fold] ${currentPlayer.name} timed out in ${roomId} (${count}/3)`);
-      handleAction(roomId, currentPlayer.agentId, 'fold', undefined, true);
-    }
-
-    // Schedule the next player's timeout
-    scheduleActionTimeout(roomId);
-  }, TURN_TIMEOUT_MS);
-
-  actionTimeouts.set(roomId, timeout);
-}
-
-// ─── Game actions ─────────────────────────────────────────────────────────────
-
-export function handleAction(
-  roomId: string,
-  agentId: string,
-  action: string,
-  amount?: number,
-  isTimeout = false,
-): string | null {
-  const room = rooms.get(roomId);
-  if (!room || !room.game) return 'No active game';
-
-  const validActions = ['fold', 'check', 'call', 'raise', 'all_in'];
-  if (!validActions.includes(action)) return 'Invalid action';
-
-  const success = processAction(room.game, agentId, action as any, amount);
-  if (!success) return 'Invalid action for current game state';
-
-  // Real action resets consecutive timeout count
-  if (!isTimeout) {
-    consecutiveTimeouts.delete(`${roomId}:${agentId}`);
-  }
-
-  bumpVersion(roomId);
-  return null;
-}
-
-export function tryStartGame(roomId: string): boolean {
-  const room = rooms.get(roomId);
-  if (!room || !room.game) return false;
-
-  if (canStartGame(room.game)) {
-    startNewHand(room.game, roomId, room.name);
-    bumpVersion(roomId);
-    return true;
-  }
-  return false;
-}
-
-export function tryStartNextHand(roomId: string): boolean {
-  const room = rooms.get(roomId);
-  if (!room || !room.game) return false;
-
-  if (room.game.phase !== 'showdown') return false;
-  if (room.game.players.length < 2) return false;
-
-  // Persist chip counts after each completed hand (cold-start recovery)
-  for (const p of room.game.players) {
-    if (p.chips > 0) saveRoomPlayer(roomId, p.agentId, p.name, p.chips);
-  }
-
-  const bustedPlayers = room.game.players.filter(p => p.chips <= 0);
-  for (const p of bustedPlayers) {
-    // Busted players have 0 chips — nothing to return, but log for audit
-    console.log(`[rooms] busted player ${p.name} (${p.agentId}) removed from ${roomId} with ${p.chips} chips`);
-    removePlayer(room.game, p.agentId);
-    removeRoomPlayer(roomId, p.agentId);
-  }
-
-  if (room.game.players.length < 2) return false;
-
-  startNewHand(room.game);
-  bumpVersion(roomId);
-  return true;
-}
-
-// ─── Equity cache (avoid recalculating 500-sample Monte Carlo on every poll) ──
-
-const equityCache = new Map<string, { version: number; equity: Map<string, number> }>();
-
 // ─── Client state ─────────────────────────────────────────────────────────────
 
-export function getClientGameState(roomId: string, viewerAgentId: string): ClientGameState | null {
-  const room = rooms.get(roomId);
+export async function getClientGameState(roomId: string, viewerAgentId: string): Promise<ClientGameState | null> {
+  const room = await loadRoom(roomId);
   if (!room || !room.game) return null;
 
+  // Enforce any expired timeouts
+  let changed = await enforceTimeout(room);
+  while (changed) {
+    const snapshot: any = { ...room.game };
+    if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
+    const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
+    if (saveResult.success) room.stateVersion = saveResult.newVersion;
+    changed = await enforceTimeout(room);
+  }
+
   const game = room.game;
+  if (!game) return null;
+
   const isShowdown = game.phase === 'showdown';
 
-  // Calculate win probabilities (skip during waiting/showdown), with caching
+  // Calculate win probabilities
   const showEquity = game.phase !== 'waiting' && game.phase !== 'showdown' && game.players.some(p => p.holeCards.length === 2);
   let equity: Map<string, number> | null = null;
   if (showEquity) {
@@ -725,7 +786,7 @@ export function getClientGameState(roomId: string, viewerAgentId: string): Clien
     name: p.name,
     seatIndex: p.seatIndex,
     chips: p.chips,
-    holeCards: p.holeCards,  // All cards face-up — spectators see everything
+    holeCards: p.holeCards,
     currentBet: p.currentBet,
     hasFolded: p.hasFolded,
     hasActed: p.hasActed,
@@ -758,38 +819,18 @@ export function getClientGameState(roomId: string, viewerAgentId: string): Clien
   };
 }
 
-export function getValidActionsForRoom(roomId: string): ReturnType<typeof getValidActions> {
-  const room = rooms.get(roomId);
+export async function getValidActionsForRoom(roomId: string): Promise<ReturnType<typeof getValidActions>> {
+  const room = await loadRoom(roomId);
   if (!room || !room.game) return [];
   return getValidActions(room.game);
 }
 
-// ─── Chat (in-memory only, not persisted) ────────────────────────────────────
+// ─── Heartbeat ────────────────────────────────────────────────────────────────
 
-const MAX_CHAT = 100;
-
-export function addChatMessage(roomId: string, agentId: string, name: string, message: string): ChatMsg | null {
-  const room = rooms.get(roomId);
-  if (!room) return null;
-  const msg: ChatMsg = { agentId, name, message, timestamp: Date.now() };
-  if (!room.chatLog) room.chatLog = [];
-  room.chatLog.push(msg);
-  if (room.chatLog.length > MAX_CHAT) room.chatLog = room.chatLog.slice(-MAX_CHAT);
-  return msg;
-}
-
-export function getChatMessages(roomId: string, limit = 50): ChatMsg[] {
-  const room = rooms.get(roomId);
-  if (!room?.chatLog) return [];
-  return room.chatLog.slice(-limit);
-}
-
-/** Heartbeat — refresh updated_at in Supabase so the player isn't treated as stale */
-export function heartbeatPlayer(roomId: string, agentId: string): boolean {
-  const room = rooms.get(roomId);
-  if (!room?.game) return false;
-  const player = room.game.players.find(p => p.agentId === agentId);
+export async function heartbeatPlayer(roomId: string, agentId: string): Promise<boolean> {
+  const dbPlayers = await loadRoomPlayers(roomId);
+  const player = dbPlayers.find(p => p.agentId === agentId);
   if (!player) return false;
-  saveRoomPlayer(roomId, agentId, player.name, player.chips);
+  await saveRoomPlayer(roomId, agentId, player.agentName, player.chips);
   return true;
 }

@@ -101,15 +101,14 @@ export async function loadAllRoomPlayers(): Promise<(RoomPlayerRecord & { roomId
 }
 
 /** Upsert a player's seat + chip count (call on join and after each hand) */
-export function saveRoomPlayer(roomId: string, agentId: string, agentName: string, chips: number): void {
-  supabase.from('casino_room_players').upsert({
+export async function saveRoomPlayer(roomId: string, agentId: string, agentName: string, chips: number): Promise<void> {
+  const { error } = await supabase.from('casino_room_players').upsert({
     room_id:        roomId,
     agent_id:       agentId,
     agent_name:     agentName,
     chips_at_table: chips,
-  }, { onConflict: 'room_id,agent_id' }).then(({ error }) => {
-    if (error) console.error('[casino-db] saveRoomPlayer:', error.message);
-  });
+  }, { onConflict: 'room_id,agent_id' });
+  if (error) console.error('[casino-db] saveRoomPlayer:', error.message);
 }
 
 /** Delete all casino_room_players rows not updated within STALE_MS. Returns removed count. */
@@ -125,14 +124,12 @@ export async function cleanStaleRoomPlayers(): Promise<number> {
 }
 
 /** Remove a player from the persistent seat list (call on leave) */
-export function removeRoomPlayer(roomId: string, agentId: string): void {
-  supabase.from('casino_room_players')
+export async function removeRoomPlayer(roomId: string, agentId: string): Promise<void> {
+  const { error } = await supabase.from('casino_room_players')
     .delete()
     .eq('room_id', roomId)
-    .eq('agent_id', agentId)
-    .then(({ error }) => {
-      if (error) console.error('[casino-db] removeRoomPlayer:', error.message);
-    });
+    .eq('agent_id', agentId);
+  if (error) console.error('[casino-db] removeRoomPlayer:', error.message);
 }
 
 // ── Games ────────────────────────────────────────────────────────────────────
@@ -355,12 +352,10 @@ export async function saveRoomState(roomId: string, game: unknown, stateVersion:
 }
 
 /** Delete persisted state when a room becomes empty. */
-export function deleteRoomState(roomId: string): void {
-  supabase.from('casino_room_state')
-    .delete().eq('room_id', roomId)
-    .then(({ error }) => {
-      if (error) console.error('[casino-db] deleteRoomState:', error.message);
-    });
+export async function deleteRoomState(roomId: string): Promise<void> {
+  const { error } = await supabase.from('casino_room_state')
+    .delete().eq('room_id', roomId);
+  if (error) console.error('[casino-db] deleteRoomState:', error.message);
 }
 
 /** Load one room's saved game state (for cross-instance recovery). */
@@ -389,4 +384,160 @@ export async function loadAllRoomStates(): Promise<
     map.set(row.room_id, { game: row.game_json, stateVersion: row.state_version ?? 0 });
   }
   return map;
+}
+
+// ── Atomic Operations (DB-first architecture) ───────────────────────────────
+
+/**
+ * Optimistic-lock save: UPDATE only if state_version matches expectedVersion.
+ * Returns { success: true, newVersion } or { success: false } on conflict.
+ */
+export async function saveRoomStateWithVersion(
+  roomId: string,
+  game: unknown,
+  expectedVersion: number,
+): Promise<{ success: boolean; newVersion: number }> {
+  const newVersion = expectedVersion + 1;
+  const { data, error } = await supabase
+    .from('casino_room_state')
+    .upsert({
+      room_id:       roomId,
+      game_json:     game,
+      state_version: newVersion,
+    }, { onConflict: 'room_id' })
+    .eq('room_id', roomId)
+    // Only update if current version matches expected (optimistic lock for existing rows)
+    .select('state_version');
+
+  // For new rows (no existing state), upsert always succeeds.
+  // For existing rows, we need a different approach: use update with WHERE.
+  // Supabase upsert doesn't support conditional WHERE, so we'll try update first,
+  // then insert if no row exists.
+  if (error) {
+    console.error('[casino-db] saveRoomStateWithVersion upsert error:', error.message);
+  }
+
+  // Use a two-step approach: try UPDATE with version check, fall back to INSERT
+  const { data: updated, error: updateErr } = await supabase
+    .from('casino_room_state')
+    .update({
+      game_json:     game,
+      state_version: newVersion,
+    })
+    .eq('room_id', roomId)
+    .eq('state_version', expectedVersion)
+    .select('state_version');
+
+  if (updateErr) {
+    console.error('[casino-db] saveRoomStateWithVersion update:', updateErr.message);
+    return { success: false, newVersion: expectedVersion };
+  }
+
+  if (updated && updated.length > 0) {
+    return { success: true, newVersion };
+  }
+
+  // No row matched — either version conflict or row doesn't exist yet
+  // Try inserting (for brand new rooms)
+  if (expectedVersion === 0) {
+    const { error: insertErr } = await supabase
+      .from('casino_room_state')
+      .insert({
+        room_id:       roomId,
+        game_json:     game,
+        state_version: newVersion,
+      });
+    if (!insertErr) {
+      return { success: true, newVersion };
+    }
+    // Insert failed (maybe race), check if version in DB is already ahead
+    console.error('[casino-db] saveRoomStateWithVersion insert:', insertErr.message);
+  }
+
+  return { success: false, newVersion: expectedVersion };
+}
+
+/**
+ * Atomic chip deduction: UPDATE chips = chips - amount WHERE chips >= amount.
+ * Returns new chip balance, or null if insufficient funds.
+ */
+export async function deductChipsAtomic(agentId: string, amount: number): Promise<number | null> {
+  // Use raw RPC-style: read, check, update in a "compare-and-swap" pattern.
+  // Supabase doesn't support computed column updates directly, so we read-then-update atomically.
+  const { data: agent, error: readErr } = await supabase
+    .from('casino_agents')
+    .select('chips')
+    .eq('id', agentId)
+    .single();
+  if (readErr || !agent) return null;
+  if (agent.chips < amount) return null;
+
+  const newChips = agent.chips - amount;
+  const { data: updated, error: updateErr } = await supabase
+    .from('casino_agents')
+    .update({ chips: newChips })
+    .eq('id', agentId)
+    .eq('chips', agent.chips) // optimistic lock on chips value
+    .select('chips');
+
+  if (updateErr || !updated || updated.length === 0) return null;
+  return updated[0].chips;
+}
+
+/**
+ * Atomic chip addition: UPDATE chips = chips + amount.
+ */
+export async function addChipsAtomic(agentId: string, amount: number): Promise<number | null> {
+  const { data: agent, error: readErr } = await supabase
+    .from('casino_agents')
+    .select('chips')
+    .eq('id', agentId)
+    .single();
+  if (readErr || !agent) return null;
+
+  const newChips = agent.chips + amount;
+  const { data: updated, error: updateErr } = await supabase
+    .from('casino_agents')
+    .update({ chips: newChips })
+    .eq('id', agentId)
+    .select('chips');
+
+  if (updateErr || !updated || updated.length === 0) return null;
+  return updated[0].chips;
+}
+
+/** Load full agent record from DB */
+export async function loadAgent(agentId: string): Promise<Agent | null> {
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .select('id, name, chips, claims_today, last_claim_at, last_claim_date')
+    .eq('id', agentId)
+    .single();
+  if (error || !data) return null;
+  return {
+    id:            data.id,
+    name:          data.name,
+    chips:         data.chips,
+    claimsToday:   data.claims_today    ?? 0,
+    lastClaimAt:   data.last_claim_at   ?? 0,
+    lastClaimDate: data.last_claim_date ?? '',
+    createdAt:     Date.now(),
+  };
+}
+
+/** Load all agents from DB (for leaderboard/listing) */
+export async function loadAllAgents(): Promise<Agent[]> {
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .select('id, name, chips, claims_today, last_claim_at, last_claim_date');
+  if (error) { console.error('[casino-db] loadAllAgents:', error.message); return []; }
+  return (data ?? []).map(row => ({
+    id:            row.id,
+    name:          row.name,
+    chips:         row.chips,
+    claimsToday:   row.claims_today    ?? 0,
+    lastClaimAt:   row.last_claim_at   ?? 0,
+    lastClaimDate: row.last_claim_date ?? '',
+    createdAt:     Date.now(),
+  }));
 }

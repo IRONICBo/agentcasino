@@ -2,17 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateAgent, claimChips, getAgent, getChipBalance } from '@/lib/chips';
 import { recordGame, getLeaderboard, loadRoomState } from '@/lib/casino-db';
 import {
-  initDefaultRooms, listRooms, listRecommendedRooms, listCategories,
+  listRooms, listRecommendedRooms, listCategories,
   joinRoom, leaveRoom,
   handleAction, tryStartGame, tryStartNextHand,
   getClientGameState, getRoom, getValidActionsForRoom,
-  scheduleActionTimeout, clearActionTimeout,
   heartbeatPlayer,
   waitForStateChange,
   getAgentRoom,
-  waitForHydration,
   addChatMessage,
   getChatMessages,
+  enforceTimeoutForRoom,
 } from '@/lib/room-manager';
 import {
   verifyMimiLogin, simpleLogin, extractApiKey, resolveAgentId,
@@ -33,9 +32,6 @@ import { listAgents } from '@/lib/chips';
 
 // Allow up to 15s for long-poll responses on Vercel
 export const maxDuration = 15;
-
-// Ensure rooms exist (idempotent)
-initDefaultRooms();
 
 // =============================================================================
 // Auth helper — resolve agent_id from Bearer token OR body/query param
@@ -110,75 +106,42 @@ export async function GET(req: NextRequest) {
 
   switch (action) {
     case 'rooms': {
-      await waitForHydration();
       const hasAuth = !!extractApiKey(req.headers.get('authorization'));
       const wantFull = req.nextUrl.searchParams.get('view') === 'all';
-      const roomsList = (hasAuth || wantFull) ? listRooms() : listRecommendedRooms();
-      // Correct playerCount from DB for cross-instance consistency
-      const { loadAllRoomPlayers: loadRPRooms } = await import('@/lib/casino-db');
-      const dbpRooms = await loadRPRooms();
-      const dbcRooms = new Map<string, number>();
-      for (const p of dbpRooms) dbcRooms.set(p.roomId, (dbcRooms.get(p.roomId) ?? 0) + 1);
-      for (const r of roomsList) r.playerCount = dbcRooms.get(r.id) ?? 0;
-      return NextResponse.json({ rooms: roomsList, total: listRooms().length });
+      const roomsList = (hasAuth || wantFull) ? await listRooms() : await listRecommendedRooms();
+      return NextResponse.json({ rooms: roomsList, total: (await listRooms()).length });
     }
 
     case 'categories': {
-      await waitForHydration();
       const hasAuth = !!extractApiKey(req.headers.get('authorization'));
       const wantFull = req.nextUrl.searchParams.get('view') === 'all';
-      // Correct playerCount from DB to handle cross-instance leave/eviction
-      const { loadAllRoomPlayers } = await import('@/lib/casino-db');
-      const dbPlayers = await loadAllRoomPlayers();
-      const dbCountByRoom = new Map<string, number>();
-      for (const p of dbPlayers) dbCountByRoom.set(p.roomId, (dbCountByRoom.get(p.roomId) ?? 0) + 1);
-      const cats = listCategories(!(hasAuth || wantFull));
-      for (const cat of cats) {
-        for (const t of cat.tables) {
-          t.playerCount = dbCountByRoom.get(t.id) ?? 0;
-        }
-      }
+      const cats = await listCategories(!(hasAuth || wantFull));
       return NextResponse.json({ categories: cats });
     }
 
     case 'balance': {
       if (!agentId) return err('Bearer token required. Login first.', 401);
-      // Read from DB for cross-instance consistency, fallback to memory
-      const { loadAgentChips } = await import('@/lib/casino-db');
-      const dbChips = await loadAgentChips(agentId);
-      const chips = dbChips ?? getChipBalance(agentId);
-      // Sync memory if DB has fresher data
-      if (dbChips !== null) {
-        const agent = getAgent(agentId);
-        if (agent && agent.chips !== dbChips) agent.chips = dbChips;
-      }
+      const chips = await getChipBalance(agentId);
       return NextResponse.json({ agent_id: agentId, chips });
     }
 
     case 'resolve_watch': {
       const wid = req.nextUrl.searchParams.get('agent_id');
       if (!wid) return err('agent_id required');
-      const agent = getAgent(wid);
+      const agent = await getAgent(wid);
       if (!agent) return err('Agent not found', 404);
-      // Check DB for current room (cross-instance consistency)
-      const { loadAllRoomPlayers: loadRPWatch } = await import('@/lib/casino-db');
-      const dbpWatch = await loadRPWatch();
-      const dbRoom = dbpWatch.find(p => p.agentId === wid)?.roomId ?? null;
+      const dbRoom = await getAgentRoom(agent.id);
       return NextResponse.json({
         agent_id: agent.id,
         name: agent.name,
-        current_room: dbRoom || getAgentRoom(agent.id),
+        current_room: dbRoom,
       });
     }
 
     case 'status': {
       if (!agentId) return err('Bearer token required. Login first.', 401);
-      const agent = getAgent(agentId);
+      const agent = await getAgent(agentId);
       if (!agent) return err('Agent not found. Login or register first.', 404);
-      // Read chips from DB for cross-instance consistency
-      const { loadAgentChips: loadStatusChips } = await import('@/lib/casino-db');
-      const statusChips = await loadStatusChips(agentId);
-      if (statusChips !== null) agent.chips = statusChips;
       return NextResponse.json({
         id: agent.id,
         name: agent.name,
@@ -193,29 +156,23 @@ export async function GET(req: NextRequest) {
       if (!apiKey) return err('Bearer token required. Login first.', 401);
       const session = await getSessionAsync(apiKey);
       if (!session) return err('Invalid or expired API key. Re-login.', 401);
-      const agent = getAgent(session.agentId);
-      // Read chips + room from DB for cross-instance consistency
-      const { loadAgentChips: loadMeChips, loadAllRoomPlayers: loadRPMe } = await import('@/lib/casino-db');
-      const meChips = await loadMeChips(session.agentId);
-      if (meChips !== null && agent) agent.chips = meChips;
-      const dbpMe = await loadRPMe();
-      const meRoom = dbpMe.find(p => p.agentId === session.agentId)?.roomId ?? null;
+      const agent = await getAgent(session.agentId);
+      const meRoom = await getAgentRoom(session.agentId);
       return NextResponse.json({
         agent_id: session.agentId,
         name: session.name,
         auth_method: session.authMethod,
         public_key: session.publicKeyHex,
         publishable_key: session.publishableKey,
-        chips: meChips ?? agent?.chips ?? 0,
+        chips: agent?.chips ?? 0,
         claims_today: agent?.claimsToday ?? 0,
         session_created: session.createdAt,
         last_seen: session.lastSeen,
-        current_room: meRoom || getAgentRoom(session.agentId),
+        current_room: meRoom,
       });
     }
 
     case 'history': {
-      // Allow public spectator reads via ?agent_id=; own history requires Bearer token
       const historyTarget = agentId || paramAgentId;
       if (!historyTarget) return err('Bearer token or agent_id required.', 401);
       const { getAgentHistory } = await import('@/lib/casino-db');
@@ -225,65 +182,49 @@ export async function GET(req: NextRequest) {
     }
 
     case 'game_state': {
-      await waitForHydration();
       const id = agentId || paramAgentId;
       if (!id) return err('Login required or provide agent_id');
       const roomId = req.nextUrl.searchParams.get('room_id');
       if (!roomId) return err('room_id required');
-      const room = getRoom(roomId);
+
+      // Enforce timeouts before anything
+      await enforceTimeoutForRoom(roomId);
+
+      const room = await getRoom(roomId);
       if (!room) return err('Room not found', 404);
 
       // Long-poll: wait for a state change if ?since=N is provided
       const sinceParam = req.nextUrl.searchParams.get('since');
-      let pollTimedOutStale = false;
       if (sinceParam !== null) {
         const sinceVersion = parseInt(sinceParam, 10);
         if (!isNaN(sinceVersion)) {
           await waitForStateChange(roomId, sinceVersion, 8_000);
-          // If local stateVersion still matches sinceVersion after the wait, this instance
-          // may be stale — the action was processed on a different Vercel instance.
-          if (sinceVersion > 0 && room.stateVersion === sinceVersion) {
-            pollTimedOutStale = true;
-          }
         }
       }
 
-      // Cross-instance recovery: always check DB for fresher state
-      {
-        const saved = await loadRoomState(roomId);
-        if (saved?.game && saved.stateVersion > room.stateVersion) {
-          const { _turnDeadlineMs, ...g } = saved.game as any;
-          if (g.phase) {
-            room.game = g;
-            room.stateVersion = saved.stateVersion;
-            if (_turnDeadlineMs && _turnDeadlineMs > Date.now()) {
-              room.turnDeadlineMs = _turnDeadlineMs;
-            }
-            if (g.phase !== 'showdown') scheduleActionTimeout(roomId);
-          }
-        }
+      // Enforce timeouts again after poll wait
+      await enforceTimeoutForRoom(roomId);
+
+      // Auto-advance: showdown -> next hand
+      const roomAfter = await getRoom(roomId);
+      if (roomAfter?.game?.phase === 'showdown' && roomAfter.game.players.length >= 2) {
+        await tryStartNextHand(roomId);
+      }
+      // Auto-start: waiting with 2+ players
+      const roomCheck = await getRoom(roomId);
+      if (roomCheck?.game?.phase === 'waiting' && roomCheck.game.players.length >= 2) {
+        await tryStartGame(roomId);
       }
 
-      // Auto-advance: showdown → next hand
-      if (room.game?.phase === 'showdown' && room.game.players.length >= 2) {
-        const advanced = tryStartNextHand(roomId);
-        if (advanced) scheduleActionTimeout(roomId);
-      }
-      // Auto-start: waiting with 2+ players (handles cross-instance join race)
-      if (room.game?.phase === 'waiting' && room.game.players.length >= 2) {
-        const started = tryStartGame(roomId);
-        if (started) scheduleActionTimeout(roomId);
-      }
+      // Auto-heartbeat
+      if (id && id !== '__spectator__') await heartbeatPlayer(roomId, id);
 
-      // Auto-heartbeat: polling game_state keeps the seat alive
-      if (id && id !== '__spectator__') heartbeatPlayer(roomId, id);
-
-      const state = getClientGameState(roomId, id);
+      const state = await getClientGameState(roomId, id);
       if (!state) return NextResponse.json({ phase: 'waiting', message: 'No active game yet', stateVersion: 0 });
 
       const myPlayer = state.players.find(p => p.agentId === id);
       const isMyTurn = state.players[state.currentPlayerIndex]?.agentId === id;
-      const validActions = isMyTurn ? getValidActionsForRoom(roomId) : [];
+      const validActions = isMyTurn ? await getValidActionsForRoom(roomId) : [];
 
       return NextResponse.json({
         ...state,
@@ -297,17 +238,14 @@ export async function GET(req: NextRequest) {
     case 'valid_actions': {
       const roomId = req.nextUrl.searchParams.get('room_id');
       if (!roomId) return err('room_id required');
-      return NextResponse.json({ valid_actions: getValidActionsForRoom(roomId) });
+      return NextResponse.json({ valid_actions: await getValidActionsForRoom(roomId) });
     }
 
     case 'stats': {
-      await waitForHydration();
       const sid = agentId || paramAgentId;
       if (sid) {
-        // Read from DB for cross-instance accuracy; volatile currentStreak merged from memory
         return NextResponse.json(await getStatsFromDB(sid));
       }
-      // No agent_id → in-memory bulk list (leaderboard merges DB anyway)
       return NextResponse.json({ agents: getAllStats() });
     }
 
@@ -319,7 +257,6 @@ export async function GET(req: NextRequest) {
     }
 
     case 'leaderboard': {
-      // All data read directly from Supabase — no in-memory stats dependency
       const dbBoard = await getLeaderboard(50);
 
       function pctDB(n: number, d: number) { return d > 0 ? Math.round((n / d) * 1000) / 10 : 0; }
@@ -336,7 +273,6 @@ export async function GET(req: NextRequest) {
         const pasAct  = a.passive_actions    ?? 0;
         const sdH     = a.showdown_hands  ?? 0;
         const sdW     = a.showdown_wins   ?? 0;
-        // Only show computed stats if agent has actual tracking data
         const hasStats = vpipH > 0 || aggAct > 0 || sdH > 0;
         return {
           rank:      i + 1,
@@ -453,7 +389,6 @@ export async function POST(req: NextRequest) {
   switch (action) {
     // ==== mimi Login — Ed25519 signature verification ====
     case 'login': {
-      // Replay protection: reject reused signatures
       if (body.signature && body.agent_id && body.timestamp) {
         const nonce = loginNonce(body.agent_id, body.timestamp, body.signature);
         if (!useNonce(nonce)) {
@@ -496,7 +431,7 @@ export async function POST(req: NextRequest) {
       const id = resolvedAgentId;
       if (!id) return err('Login required');
       if (!body.room_id) return err('room_id required');
-      const ok = heartbeatPlayer(body.room_id, id);
+      const ok = await heartbeatPlayer(body.room_id, id);
       return NextResponse.json({ success: ok, message: ok ? 'Seat refreshed' : 'Not seated in that room' });
     }
 
@@ -510,6 +445,9 @@ export async function POST(req: NextRequest) {
       if (!/^[a-zA-Z0-9_-]+$/.test(newName)) return err('name: alphanumeric, hyphens, underscores only');
       const agent = await getOrCreateAgent(id, newName);
       agent.name = newName;
+      // Persist the name change
+      const { saveAgent } = await import('@/lib/casino-db');
+      await saveAgent(agent);
       return NextResponse.json({ success: true, name: newName });
     }
 
@@ -530,14 +468,13 @@ export async function POST(req: NextRequest) {
       if (!body.buy_in || typeof body.buy_in !== 'number' || !Number.isFinite(body.buy_in) || body.buy_in <= 0) return err('buy_in required (positive finite number)');
 
       const agent = await getOrCreateAgent(id, body.name || id);
-      const error = joinRoom(body.room_id, id, agent.name, body.buy_in);
+      const error = await joinRoom(body.room_id, id, agent.name, body.buy_in);
       if (error) return err(error);
 
-      // If the table was stuck in showdown, try to start next hand now that someone joined
-      let started = tryStartNextHand(body.room_id);
-      if (!started) started = tryStartGame(body.room_id);
-      if (started) scheduleActionTimeout(body.room_id);
-      const state = getClientGameState(body.room_id, id);
+      // Try to start next hand or new game
+      let started = await tryStartNextHand(body.room_id);
+      if (!started) started = await tryStartGame(body.room_id);
+      const state = await getClientGameState(body.room_id, id);
 
       return NextResponse.json({
         success: true,
@@ -552,8 +489,8 @@ export async function POST(req: NextRequest) {
       const id = resolvedAgentId;
       if (!id) return err('Login required or provide agent_id');
       if (!body.room_id) return err('room_id required');
-      leaveRoom(body.room_id, id);
-      const agent = getAgent(id);
+      await leaveRoom(body.room_id, id);
+      const agent = await getAgent(id);
       return NextResponse.json({
         success: true,
         message: 'Left the table. Remaining chips returned to your balance.',
@@ -568,46 +505,40 @@ export async function POST(req: NextRequest) {
       if (!body.room_id) return err('room_id required');
       if (!body.move) return err('move required: fold, check, call, raise, all_in');
 
-      const actionError = handleAction(body.room_id, id, body.move, body.amount);
+      // Enforce timeouts before processing
+      await enforceTimeoutForRoom(body.room_id);
+
+      const actionError = await handleAction(body.room_id, id, body.move, body.amount);
       if (actionError) return err(actionError);
 
-      const room = getRoom(body.room_id);
+      const room = await getRoom(body.room_id);
       if (room?.game?.phase === 'showdown' && room.game.winners) {
         const winners = room.game.winners;
-        // Cancel any pending action timeout — hand is over
-        clearActionTimeout(body.room_id);
-        // Persist game result to Supabase (fire-and-forget)
+        // Persist game result to Supabase
         recordGame({
           roomId:     body.room_id,
           roomName:   room.name,
-          categoryId: (room as any).categoryId ?? '',
+          categoryId: room.categoryId,
           smallBlind: room.smallBlind,
           bigBlind:   room.bigBlind,
-          pot:        winners.reduce((s, w) => s + w.amount, 0),
+          pot:        winners.reduce((s: number, w: any) => s + w.amount, 0),
           players:    room.game.players,
           winners,
           startedAt:  room.createdAt,
         });
-        // Try to start next hand after a brief delay (show winner animation)
-        const rid = body.room_id;
-        setTimeout(() => {
-          const ok = tryStartNextHand(rid);
-          if (ok) scheduleActionTimeout(rid);
-        }, 3000);
+
+        // _nextHandAt is set inside handleAction; next poll will auto-advance
         return NextResponse.json({
           success: true,
           move: body.move,
           amount: body.amount,
           result: 'showdown',
           winners,
-          game_state: getClientGameState(body.room_id, id),
+          game_state: await getClientGameState(body.room_id, id),
         });
       }
 
-      // Schedule timeout for the next player
-      scheduleActionTimeout(body.room_id);
-
-      const state = getClientGameState(body.room_id, id);
+      const state = await getClientGameState(body.room_id, id);
       const isMyTurn = state?.players[state.currentPlayerIndex]?.agentId === id;
 
       return NextResponse.json({
@@ -625,13 +556,12 @@ export async function POST(req: NextRequest) {
       if (!id) return err('Login required or provide agent_id');
       if (!body.room_id) return err('room_id required');
       if (!body.message) return err('message required');
-      // SECURITY: strip any secret keys from chat messages
       const rawMsg = String(body.message);
       if (rawMsg.length > 500) return err('Message too long (max 500 chars)');
       if (/sk_[a-f0-9]{10,}/.test(rawMsg)) {
         return err('Message rejected: never share secret keys (sk_) in chat');
       }
-      const agent = getAgent(id);
+      const agent = await getAgent(id);
       const name = agent?.name ?? (body.agent_name as string | undefined) ?? id;
       const chatMsg = addChatMessage(body.room_id, id, name, rawMsg);
       if (!chatMsg) return err('Room not found');

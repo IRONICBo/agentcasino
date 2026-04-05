@@ -345,7 +345,7 @@ export async function simpleLogin(agentId: string, name?: string): Promise<Login
   pendingRegistrations.add(agentId);
   try {
     const displayName = name || agentId;
-    const existingAgent = getAgent(agentId);
+    const existingAgent = await getAgent(agentId);
 
     // Security: if agent already exists and has keys, reject re-registration.
     // This prevents account takeover by re-registering a known agent_id.

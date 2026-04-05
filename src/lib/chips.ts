@@ -1,61 +1,46 @@
 import { Agent } from './types';
-import { saveAgent, loadAgents } from './casino-db';
+import { saveAgent, loadAgent, loadAllAgents, deductChipsAtomic, addChipsAtomic } from './casino-db';
 
 const CLAIM_AMOUNT = 50_000;         // chips per claim
 const CLAIM_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour between claims
 const MAX_CLAIMS_PER_DAY = 12;       // max 12 claims/day = 600k/day
-
-// Global singleton to share state between API routes
-const globalAny = globalThis as any;
-if (!globalAny.__casino_agents) {
-  globalAny.__casino_agents = new Map<string, Agent>();
-  // Hydrate from Supabase on first boot
-  loadAgents().then(persisted => {
-    for (const [id, agent] of persisted) {
-      if (!globalAny.__casino_agents.has(id)) {
-        globalAny.__casino_agents.set(id, agent);
-      }
-    }
-  });
-}
-const agents: Map<string, Agent> = globalAny.__casino_agents;
 
 function todayStr(): string {
   return new Date().toISOString().split('T')[0];
 }
 
 export async function getOrCreateAgent(id: string, name: string): Promise<Agent> {
-  let agent = agents.get(id);
-  if (!agent) {
-    agent = {
-      id,
-      name,
-      chips: 0,
-      claimsToday: 0,
-      lastClaimAt: 0,
-      lastClaimDate: '',
-      createdAt: Date.now(),
-    };
-    agents.set(id, agent);
-    await saveAgent(agent);
+  const existing = await loadAgent(id);
+  if (existing) {
+    // Reset daily claims if new day
+    const today = todayStr();
+    if (existing.lastClaimDate !== today) {
+      existing.claimsToday = 0;
+      existing.lastClaimDate = today;
+    }
+    return existing;
   }
-  // Reset daily claims if new day
+  // Create new agent
+  const agent: Agent = {
+    id,
+    name,
+    chips: 0,
+    claimsToday: 0,
+    lastClaimAt: 0,
+    lastClaimDate: '',
+    createdAt: Date.now(),
+  };
+  await saveAgent(agent);
+  return agent;
+}
+
+export async function getAgent(id: string): Promise<Agent | undefined> {
+  const agent = await loadAgent(id);
+  if (!agent) return undefined;
   const today = todayStr();
   if (agent.lastClaimDate !== today) {
     agent.claimsToday = 0;
     agent.lastClaimDate = today;
-  }
-  return agent;
-}
-
-export function getAgent(id: string): Agent | undefined {
-  const agent = agents.get(id);
-  if (agent) {
-    const today = todayStr();
-    if (agent.lastClaimDate !== today) {
-      agent.claimsToday = 0;
-      agent.lastClaimDate = today;
-    }
   }
   return agent;
 }
@@ -70,7 +55,7 @@ export interface ClaimResult {
 }
 
 export async function claimChips(agentId: string): Promise<ClaimResult> {
-  const agent = agents.get(agentId);
+  const agent = await loadAgent(agentId);
   if (!agent) {
     return { success: false, message: 'Agent not found. Register first.', chips: 0 };
   }
@@ -85,7 +70,7 @@ export async function claimChips(agentId: string): Promise<ClaimResult> {
   if (agent.claimsToday >= MAX_CLAIMS_PER_DAY) {
     return {
       success: false,
-      message: `🎰 Daily limit reached (${MAX_CLAIMS_PER_DAY}/${MAX_CLAIMS_PER_DAY}). Come back tomorrow!`,
+      message: `Daily limit reached (${MAX_CLAIMS_PER_DAY}/${MAX_CLAIMS_PER_DAY}). Come back tomorrow!`,
       chips: agent.chips,
       claimsToday: agent.claimsToday,
       maxClaims: MAX_CLAIMS_PER_DAY,
@@ -100,7 +85,7 @@ export async function claimChips(agentId: string): Promise<ClaimResult> {
     const remainMin = Math.ceil(remainSec / 60);
     return {
       success: false,
-      message: `⏰ Cooldown: ${remainMin} min remaining. Claims: ${agent.claimsToday}/${MAX_CLAIMS_PER_DAY} today.`,
+      message: `Cooldown: ${remainMin} min remaining. Claims: ${agent.claimsToday}/${MAX_CLAIMS_PER_DAY} today.`,
       chips: agent.chips,
       claimsToday: agent.claimsToday,
       maxClaims: MAX_CLAIMS_PER_DAY,
@@ -116,37 +101,31 @@ export async function claimChips(agentId: string): Promise<ClaimResult> {
 
   return {
     success: true,
-    message: `💰 +${CLAIM_AMOUNT.toLocaleString()} chips! (${agent.claimsToday}/${MAX_CLAIMS_PER_DAY} today)`,
+    message: `+${CLAIM_AMOUNT.toLocaleString()} chips! (${agent.claimsToday}/${MAX_CLAIMS_PER_DAY} today)`,
     chips: agent.chips,
     claimsToday: agent.claimsToday,
     maxClaims: MAX_CLAIMS_PER_DAY,
   };
 }
 
-export function getChipBalance(agentId: string): number {
-  return agents.get(agentId)?.chips ?? 0;
+export async function getChipBalance(agentId: string): Promise<number> {
+  const agent = await loadAgent(agentId);
+  return agent?.chips ?? 0;
 }
 
 export async function deductChips(agentId: string, amount: number): Promise<boolean> {
-  const agent = agents.get(agentId);
-  if (!agent || agent.chips < amount) return false;
-  agent.chips -= amount;
-  await saveAgent(agent);
-  return true;
+  const result = await deductChipsAtomic(agentId, amount);
+  return result !== null;
 }
 
 export async function addChips(agentId: string, amount: number): Promise<void> {
-  const agent = agents.get(agentId);
-  if (agent) {
-    agent.chips += amount;
-    await saveAgent(agent);
-  }
+  await addChipsAtomic(agentId, amount);
 }
 
-export function getAllAgents(): Agent[] {
-  return Array.from(agents.values());
+export async function getAllAgents(): Promise<Agent[]> {
+  return loadAllAgents();
 }
 
-export function listAgents(): Agent[] {
-  return Array.from(agents.values());
+export async function listAgents(): Promise<Agent[]> {
+  return loadAllAgents();
 }
