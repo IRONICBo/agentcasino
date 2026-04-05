@@ -150,10 +150,10 @@ export interface GameRecord {
 }
 
 /** Record a completed game hand and per-player results */
-export function recordGame(record: GameRecord): void {
+export async function recordGame(record: GameRecord): Promise<void> {
   const winner = record.winners[0];
 
-  supabase.from('casino_games').insert({
+  const { data, error } = await supabase.from('casino_games').insert({
     room_id:      record.roomId,
     room_name:    record.roomName,
     category_id:  record.categoryId,
@@ -166,44 +166,41 @@ export function recordGame(record: GameRecord): void {
     winning_hand: winner?.hand?.rank ?? null,
     started_at:   new Date(record.startedAt).toISOString(),
     ended_at:     new Date().toISOString(),
-  }).select('id').single().then(({ data, error }) => {
-    if (error) { console.error('[casino-db] recordGame:', error.message); return; }
-    if (!data) return;
+  }).select('id').single();
 
-    const gameId = data.id;
-    const playerRows = record.players.map(p => {
-      const isWinner = record.winners.some(w => w.agentId === p.agentId);
-      const winAmount = record.winners.find(w => w.agentId === p.agentId)?.amount ?? 0;
-      return {
-        game_id:    gameId,
-        agent_id:   p.agentId,
-        agent_name: p.name,
-        buy_in:     0,  // buy-in tracking not in current model
-        chips_end:  p.chips,
-        profit:     isWinner ? winAmount : -p.currentBet,
-        is_winner:  isWinner,
-      };
-    });
+  if (error) { console.error('[casino-db] recordGame:', error.message); return; }
+  if (!data) return;
 
-    supabase.from('casino_game_players').insert(playerRows).then(({ error: e }) => {
-      if (e) console.error('[casino-db] recordGamePlayers:', e.message);
-    });
-
-    // Bump games_played for each participant
-    const ids = record.players.map(p => p.agentId);
-    supabase.from('casino_agents')
-      .select('id, games_played')
-      .in('id', ids)
-      .then(({ data: agents }) => {
-        if (!agents) return;
-        for (const a of agents) {
-          supabase.from('casino_agents')
-            .update({ games_played: a.games_played + 1 })
-            .eq('id', a.id)
-            .then(() => {});
-        }
-      });
+  const gameId = data.id;
+  const playerRows = record.players.map(p => {
+    const isWinner = record.winners.some(w => w.agentId === p.agentId);
+    const winAmount = record.winners.find(w => w.agentId === p.agentId)?.amount ?? 0;
+    return {
+      game_id:    gameId,
+      agent_id:   p.agentId,
+      agent_name: p.name,
+      buy_in:     0,
+      chips_end:  p.chips,
+      profit:     isWinner ? winAmount : -p.currentBet,
+      is_winner:  isWinner,
+    };
   });
+
+  const { error: e } = await supabase.from('casino_game_players').insert(playerRows);
+  if (e) console.error('[casino-db] recordGamePlayers:', e.message);
+
+  // Bump games_played for each participant
+  const ids = record.players.map(p => p.agentId);
+  const { data: agentsData } = await supabase.from('casino_agents')
+    .select('id, games_played')
+    .in('id', ids);
+  if (agentsData) {
+    for (const a of agentsData) {
+      await supabase.from('casino_agents')
+        .update({ games_played: a.games_played + 1 })
+        .eq('id', a.id);
+    }
+  }
 }
 
 // ── Chat — in-memory only (removed from Supabase) ──────────────────────────
@@ -347,15 +344,14 @@ export async function getAgentHistory(agentId: string, limit = 20) {
 
 // ── Room Game State ──────────────────────────────────────────────────────────
 
-/** Persist the full GameState JSON after every action (fire-and-forget). */
-export function saveRoomState(roomId: string, game: unknown, stateVersion: number): void {
-  supabase.from('casino_room_state').upsert({
+/** Persist the full GameState JSON after every action. */
+export async function saveRoomState(roomId: string, game: unknown, stateVersion: number): Promise<void> {
+  const { error } = await supabase.from('casino_room_state').upsert({
     room_id:       roomId,
     game_json:     game,
     state_version: stateVersion,
-  }, { onConflict: 'room_id' }).then(({ error }) => {
-    if (error) console.error('[casino-db] saveRoomState:', error.message);
-  });
+  }, { onConflict: 'room_id' });
+  if (error) console.error('[casino-db] saveRoomState:', error.message);
 }
 
 /** Delete persisted state when a room becomes empty. */
