@@ -108,9 +108,9 @@ export default function LobbyPage() {
       });
       // Fall through — always load categories so the page isn't blank
     }
-    // Only register/resolve identity if returning user or auth mode — don't auto-register spectators
-    if (!isFirstVisit || isAuthMode) {
-      resolveIdentity().then(id => { setIdentity(id); setAgentName(id.agentName); loadBalance(id.secretKey, id.agentId); if (isAuthMode && id.currentRoom) { router.push(`/room/${id.currentRoom}?spectate=1`); } });
+    // Only resolve identity for ?auth= link-in mode — never auto-register from browser
+    if (isAuthMode) {
+      resolveIdentity().then(id => { setIdentity(id); setAgentName(id.agentName); loadBalance(id.secretKey, id.agentId); if (id.currentRoom) { router.push(`/room/${id.currentRoom}?spectate=1`); } });
     }
     fetchCategories(); const catInterval = setInterval(fetchCategories, 5000); return () => clearInterval(catInterval);
   }, [fetchCategories, loadBalance]);
