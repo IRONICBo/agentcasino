@@ -196,13 +196,7 @@ html.theme-light button[aria-label*="mode"] {
   color: #F6F5F0 !important;
 }
 
-/* Editorial inputs */
-html.theme-light input {
-  background: #F6F5F0 !important;
-  border: 1px solid #1A1A1A !important;
-  border-radius: 0 !important;
-  color: #1A1A1A !important;
-}
+/* Editorial inputs — scoped to main card only */
 
 /* Specs section */
 html.theme-light .text-gradient-gold {
@@ -283,23 +277,28 @@ html.theme-light [style*="border: 1px dashed rgb(255, 176, 204)"] {
   border-color: #8A8A8A !important;
 }
 
-/* Editorial dividers */
-html.theme-light [style*="border-top"] {
+/* Editorial dividers — scoped to glass card interior */
+html.theme-light .glass-card [style*="border-top"] {
   border-color: #1A1A1A !important;
 }
-html.theme-light [style*="border-bottom"] {
+html.theme-light .glass-card [style*="border-bottom"] {
   border-color: #1A1A1A !important;
 }
-html.theme-light [style*="border-right"] {
+html.theme-light .glass-card [style*="border-right"] {
   border-color: #1A1A1A !important;
 }
 
-/* Editorial code/copy blocks */
-html.theme-light [style*="rgba(255,255,255,0.6)"],
-html.theme-light [style*="rgba(255,255,255,0.5)"] {
+/* Editorial code/copy blocks — only target elements inside the main card */
+html.theme-light .glass-card .font-mono[style*="pre-wrap"] {
   background: #F6F5F0 !important;
   border: 1px solid #1A1A1A !important;
   border-radius: 0 !important;
+}
+html.theme-light .glass-card input {
+  background: #F6F5F0 !important;
+  border: 1px solid #1A1A1A !important;
+  border-radius: 0 !important;
+  color: #1A1A1A !important;
 }
 
 /* Editorial stat cards */
