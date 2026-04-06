@@ -593,7 +593,9 @@ export async function tryStartGame(roomId: string): Promise<boolean> {
 }
 
 export async function tryStartNextHand(roomId: string): Promise<boolean> {
+  const pendingChipsToReturn: { agentId: string; amount: number }[] = [];
   const result = await saveWithRetry(roomId, async (room) => {
+    pendingChipsToReturn.length = 0; // reset on each retry
     if (!room.game) return { game: null, error: 'no game' };
     if (room.game.phase !== 'showdown') return { game: null, error: 'not showdown' };
     if (room.game.players.length < 2) return { game: null, error: 'not enough players' };
@@ -602,11 +604,6 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
     const nextHandAt = (room.game as any)._nextHandAt;
     if (nextHandAt && Date.now() < nextHandAt) {
       return { game: null, error: 'showdown delay not elapsed' };
-    }
-
-    // Persist chip counts after each completed hand
-    for (const p of room.game.players) {
-      // Player chips persisted in game_json
     }
 
     // Remove busted players
@@ -622,7 +619,7 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
       console.log(`[rooms] pending-leave player ${p.name} (${p.agentId}) removed from ${roomId}`);
       const totalReturn = p.chips; // currentBet is 0 after showdown reset
       removePlayer(room.game, p.agentId);
-      if (totalReturn > 0) await addChipsAtomic(p.agentId, totalReturn);
+      if (totalReturn > 0) pendingChipsToReturn.push({ agentId: p.agentId, amount: totalReturn });
     }
 
     if (room.game.players.length < 2) return { game: null, error: 'not enough players after bust' };
@@ -645,6 +642,11 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
     return { game: room.game };
   });
 
+  if (result.success) {
+    for (const { agentId, amount } of pendingChipsToReturn) {
+      await addChipsAtomic(agentId, amount);
+    }
+  }
   return result.success;
 }
 
