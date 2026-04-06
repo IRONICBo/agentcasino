@@ -421,7 +421,6 @@ export async function joinRoom(roomId: string, agentId: string, agentName: strin
 export async function leaveRoom(roomId: string, agentId: string): Promise<{ success: boolean; error?: string }> {
   // Track what chips need returning — only refund AFTER save succeeds
   let chipsToReturn = 0;
-  let potReduction = 0;
   let pendingFlush: { agentId: string; chips: number }[] = [];
 
   const result = await saveWithRetry(roomId, async (room) => {
@@ -432,7 +431,6 @@ export async function leaveRoom(roomId: string, agentId: string): Promise<{ succ
 
     // Reset deferred amounts for this retry attempt
     chipsToReturn = 0;
-    potReduction = 0;
     pendingFlush = [];
 
     const phase = room.game.phase;
@@ -443,16 +441,23 @@ export async function leaveRoom(roomId: string, agentId: string): Promise<{ succ
       player.isConnected = false;
       const outcome = safeMidHandRemove(room.game, agentId);
       if (outcome === 'removed') {
-        // Race: phase changed between check and call
+        // Race: phase changed between check and call — return chips immediately
         chipsToReturn = player.chips + player.currentBet;
+        room.game.pot = Math.max(0, room.game.pot - player.currentBet);
+      } else if (outcome === 'folded_pending' || outcome === 'pending') {
+        // Penalty for voluntary mid-hand exit: 1 BB added to pot
+        const penalty = Math.min(player.chips, room.game.bigBlind);
+        if (penalty > 0) {
+          player.chips -= penalty;
+          room.game.pot += penalty;
+        }
       }
     } else {
       // Between hands: remove immediately, defer chip return
       const removed = removePlayer(room.game, agentId);
       if (removed) {
         chipsToReturn = removed.chips + removed.currentBet;
-        potReduction = removed.currentBet;
-        room.game.pot = Math.max(0, room.game.pot - potReduction);
+        room.game.pot = Math.max(0, room.game.pot - removed.currentBet);
       }
     }
 
