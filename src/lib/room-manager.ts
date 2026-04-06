@@ -699,6 +699,12 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
       return { game: null };
     }
 
+    // After eviction, ensure turn deadline is set for the current player
+    if (evicted.length > 0 && room.game!.phase !== 'waiting' && room.game!.phase !== 'showdown') {
+      room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+      (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
+    }
+
     return { game: room.game };
   });
 
@@ -924,31 +930,47 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
     changed = await enforceTimeout(room);
   }
 
-  // ── Stuck game recovery: currentPlayerIndex on a folded/invalid player ──
+  // ── Stuck game recovery ──
   if (room.game && room.game.phase !== 'waiting' && room.game.phase !== 'showdown') {
     const current = room.game.players[room.game.currentPlayerIndex];
-    const isStuck = !current || current.hasFolded || (current.isAllIn && room.game.players.filter(p => !p.hasFolded && !p.isAllIn).length <= 1);
+    const gameAny = room.game as any;
+    const hasDeadline = !!(gameAny._turnDeadlineMs ?? room.turnDeadlineMs);
+    const isCurrentFolded = !current || current.hasFolded;
+    const isCurrentAllInOnly = current?.isAllIn && room.game.players.filter(p => !p.hasFolded && !p.isAllIn).length <= 1;
+    // Stuck: current player is folded/invalid, OR no deadline set (game will never timeout)
+    const isStuck = isCurrentFolded || isCurrentAllInOnly || !hasDeadline;
+
     if (isStuck) {
-      console.log(`[rooms] stuck game detected in ${roomId} — currentPlayerIndex=${room.game.currentPlayerIndex} points to folded/invalid player, advancing`);
-      const { advancePhase: advancePhaseEngine } = await import('./poker-engine');
-      // Check if only one non-folded player remains → award pot
-      const nonFolded = room.game.players.filter(p => !p.hasFolded);
-      if (nonFolded.length === 1) {
-        // Everyone else folded — award pot
-        const winner = nonFolded[0];
-        winner.chips += room.game.pot;
-        room.game.pot = 0;
-        room.game.phase = 'showdown' as any;
-        room.game.winners = [{ agentId: winner.agentId, name: winner.name, amount: room.game.pot, hand: null as any }];
+      console.log(`[rooms] stuck game detected in ${roomId} — currentPlayerIndex=${room.game.currentPlayerIndex}, hasDeadline=${hasDeadline}, currentFolded=${isCurrentFolded}`);
+
+      // If no deadline but current player is valid, just set a deadline
+      if (!hasDeadline && current && !current.hasFolded && !isCurrentAllInOnly) {
+        room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+        (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
       } else {
-        // Multiple non-folded (some all-in) — fast-forward to showdown
-        advancePhaseEngine(room.game);
+        // Current player is folded/invalid — advance the game
+        const { advancePhase: advancePhaseEngine } = await import('./poker-engine');
+        const nonFolded = room.game.players.filter(p => !p.hasFolded);
+        if (nonFolded.length === 1) {
+          const winner = nonFolded[0];
+          const potAmount = room.game.pot;
+          winner.chips += potAmount;
+          room.game.pot = 0;
+          room.game.phase = 'showdown' as any;
+          room.game.winners = [{ agentId: winner.agentId, name: winner.name, amount: potAmount, hand: null as any }];
+        } else if (nonFolded.length === 0) {
+          room.game.phase = 'showdown' as any;
+        } else {
+          advancePhaseEngine(room.game);
+        }
       }
+
       // Save fixed state
       const snapshot: any = { ...room.game };
       if (snapshot.players) {
         snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
       }
+      if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
       const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
       if (saveResult.success) room.stateVersion = saveResult.newVersion;
     }
