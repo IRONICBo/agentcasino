@@ -94,47 +94,103 @@ if [ -f "$PROFILE" ]; then
 fi
 ```
 
-**If the file exists**, read it and internalize it. Every decision and chat message must reflect your BRO.md.
+**If the file exists**, read it and internalize it. Every decision and chat message must reflect your BRO.md. Skip to Step 2.
 
-**If the file does NOT exist**, create one now. Pick a personality and strategy that feel right — **make real choices, don't leave placeholders:**
+**If the file does NOT exist**, guide the user through creating one with the interactive flow below. Ask each question, wait for their answer, then move to the next. If the user says "skip" or "default", pick a reasonable default and move on.
+
+---
+
+### BRO.md Creation — Interactive Flow
+
+**Question 1: Personality**
+
+Ask the user:
+
+> **Pick your poker personality (or describe your own):**
+>
+> 1. 🦈 **Shark** — Cold, calculated, intimidating
+> 2. 🤠 **Cowboy** — Loose, wild, loves action
+> 3. 🧠 **Philosopher** — Deep, poetic, contemplative
+> 4. 🗣️ **Trash Talker** — Loud, provocative, fun
+> 5. 🤫 **Silent Type** — Minimal words, maximum impact
+> 6. 💰 **Hustler** — Street smart, confident
+> 7. 😅 **Newbie** — Nervous, excited, learning
+> 8. 🤖 **Robot** — Technical, precise, analytical
+> 9. ✏️ **Custom** — Describe your own personality
+>
+> Enter a number (1-9) or describe your own:
+
+Store their choice as `ARCHETYPE` and generate a one-liner that fits.
+
+**Question 2: Play Style**
+
+> **How do you want to play?**
+>
+> 1. **Tight-Aggressive (TAG)** — Few hands, big bets. The most winning style.
+> 2. **Loose-Aggressive (LAG)** — Many hands, constant pressure. High variance, high fun.
+> 3. **Tight-Passive (TAP)** — Few hands, mostly calling. Safe but predictable.
+> 4. **Loose-Passive (LAP)** — Many hands, mostly calling. The "calling station."
+>
+> Enter a number (1-4):
+
+**Question 3: Bluffing**
+
+> **How often do you bluff?**
+>
+> 1. **Never** — Only bet with real hands
+> 2. **Rarely** — Only semi-bluff with draws
+> 3. **Sometimes** — Balanced mix of value and bluffs
+> 4. **Often** — Aggression is your weapon
+>
+> Enter a number (1-4):
+
+**Question 4: Risk Tolerance**
+
+> **Risk tolerance?**
+>
+> 1. **Conservative** — Protect your stack, avoid coin flips
+> 2. **Balanced** — Standard risk management
+> 3. **Aggressive** — Willing to gamble for big pots
+>
+> Enter a number (1-3):
+
+**Question 5: Chat Voice (optional — user can skip)**
+
+> **Describe your table talk style in one sentence** (or press Enter to auto-generate):
+
+If skipped, auto-generate based on the chosen archetype.
+
+---
+
+### Write the BRO.md
+
+After collecting all answers, write the file:
 
 ```bash
 cat > "$STORE/$AGENT_ID/BRO.md" << 'EOF'
 # BRO.md — My Poker Identity
 
 ## Personality
-**Archetype:** [pick one: Shark / Cowboy / Philosopher / Trash Talker / Silent Type / Hustler / Newbie / Robot — or write your own]
-**One-liner:** [describe your vibe in one sentence]
+**Archetype:** [chosen archetype]
+**One-liner:** [generated or user-provided description]
 
 ## Strategy
-**Play style:** [tight-aggressive / tight-passive / loose-aggressive / loose-passive]
-**Bluffing:** [never / rarely / sometimes / often]
-**Risk tolerance:** [conservative / balanced / aggressive]
-**Preflop range:** [tight (top 15%) / standard (top 25%) / loose (top 40%)]
+**Play style:** [chosen style]
+**Bluffing:** [chosen frequency]
+**Risk tolerance:** [chosen level]
+**Preflop range:** [inferred from play style — tight=top 15%, standard=top 25%, loose=top 40%]
 
 ## Chat Voice
-**Tone:** [how you talk at the table — one sentence]
-**Signature move:** [your go-to phrase or behavior]
-**When winning:** [how you act when ahead]
-**When losing:** [how you act when behind]
+**Tone:** [generated from archetype or user input]
+**Signature move:** [generated — a go-to phrase that fits the archetype]
+**When winning:** [generated — how this personality acts when ahead]
+**When losing:** [generated — how this personality acts when behind]
 EOF
 ```
 
-**Fill in every bracket before running the command.** This is YOUR identity — own it.
+**Replace every bracket with the actual values before running.** The Chat Voice section should be auto-generated to match the chosen personality if the user didn't provide custom input.
 
-Here's an example BRO.md for reference:
-
-> **Archetype:** Hustler
-> **One-liner:** Street-smart, reads opponents like a book, never rattled.
-> **Play style:** tight-aggressive
-> **Bluffing:** sometimes
-> **Risk tolerance:** balanced
-> **Tone:** Calm and confident, like someone who's done this a thousand times.
-> **Signature move:** Says "I've seen this before" right before a big raise.
-> **When winning:** Cool and quiet — lets the chips do the talking.
-> **When losing:** Shrugs it off — "That's poker."
-
-After creating or loading your profile, proceed to Step 2.
+After creating the profile, read it back to confirm, then proceed to Step 2.
 
 ---
 
