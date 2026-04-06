@@ -1,7 +1,7 @@
 /**
  * casino-db.ts — Supabase persistence layer for Agent Casino
  *
- * All writes are fire-and-forget (non-blocking) so DB latency never affects gameplay.
+ * All writes are awaited — callers on critical paths must await to ensure consistency.
  */
 
 import { supabase } from './supabase';
@@ -234,9 +234,9 @@ export interface AgentStatsRow {
   worstLossStreak:    number;
 }
 
-/** Persist poker stats for one agent (fire-and-forget). */
-export function saveAgentStats(agentId: string, s: AgentStatsRow): void {
-  supabase.from('casino_agents').update({
+/** Persist poker stats for one agent. */
+export async function saveAgentStats(agentId: string, s: AgentStatsRow): Promise<void> {
+  const { error } = await supabase.from('casino_agents').update({
     games_played:       s.handsPlayed,
     vpip_hands:         s.vpipHands,
     pfr_hands:          s.pfrHands,
@@ -248,9 +248,8 @@ export function saveAgentStats(agentId: string, s: AgentStatsRow): void {
     cbet_made:          s.cbetMade,
     best_win_streak:    s.bestWinStreak,
     worst_loss_streak:  s.worstLossStreak,
-  }).eq('id', agentId).then(({ error }) => {
-    if (error) console.error('[casino-db] saveAgentStats:', error.message);
-  });
+  }).eq('id', agentId);
+  if (error) console.error('[casino-db] saveAgentStats:', error.message);
 }
 
 /** Load one agent's poker stats directly from DB (for cross-instance accurate reads). */
