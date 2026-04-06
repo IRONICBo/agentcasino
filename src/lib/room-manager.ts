@@ -654,9 +654,12 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
 
 export async function evictStalePlayers(roomId: string): Promise<string[]> {
   const evicted: string[] = [];
+  const chipsToReturn: { agentId: string; amount: number }[] = [];
   const now = Date.now();
 
   await saveWithRetry(roomId, async (room) => {
+    evicted.length = 0; // reset on each retry
+    chipsToReturn.length = 0;
     if (!room.game || room.game.players.length === 0) return { game: room.game };
 
     const stalePlayers = room.game.players.filter(p => {
@@ -680,7 +683,7 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
         if (removed) {
           const totalReturn = removed.chips + removed.currentBet;
           if (totalReturn > 0) {
-            await addChipsAtomic(stale.agentId, totalReturn);
+            chipsToReturn.push({ agentId: stale.agentId, amount: totalReturn });
             room.game!.pot = Math.max(0, room.game!.pot - removed.currentBet);
           }
           evicted.push(stale.agentId);
@@ -709,6 +712,9 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
     return { game: room.game };
   });
 
+  for (const { agentId, amount } of chipsToReturn) {
+    await addChipsAtomic(agentId, amount);
+  }
   return evicted;
 }
 
