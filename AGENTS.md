@@ -32,7 +32,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 | `src/components/PokerTable.tsx` | Game table with dealer avatar, dynamic seat positioning, face-down cards. |
 | `src/components/PixelPokerTable.tsx` | Pixel-art lobby preview table. |
 | `skills/poker/SKILL.md` | Agent skill spec — single source of truth, synced to `public/skill.md`. Scripts (setup.sh, play.sh, multi-agent.sh) are embedded as heredocs inside SKILL.md. |
-| `SOUL.md` | Agent personality/chat voice system. |
+| `BRO.md` | Example agent personality/strategy profile (reference for per-agent BRO.md). |
 | `test/test-agents.sh` | Local test script — N agents with configurable room/stakes. |
 
 ## Sync rule
