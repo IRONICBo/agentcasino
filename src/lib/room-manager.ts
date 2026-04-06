@@ -7,6 +7,7 @@ import {
   saveAllHoleCards, loadHoleCards, loadAllHoleCards, deleteHandCards,
 } from './casino-db';
 import { calculateEquity } from './equity';
+import { supabase } from './supabase';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
 
@@ -255,6 +256,8 @@ async function saveWithRetry(
     if (saveResult.success) {
       room.game = result.game;
       room.stateVersion = saveResult.newVersion;
+      // Push spectator state to all subscribers (fire-and-forget)
+      broadcastSpectatorState(roomId, room).catch(() => {});
       return { success: true, room };
     }
 
@@ -960,6 +963,87 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
     turnDeadline: deadline,
     turnTimeRemaining,
   };
+}
+
+/**
+ * Build the spectator ClientGameState and broadcast it via Supabase Realtime.
+ * Called after every state change so spectators get push updates with zero polling.
+ */
+async function broadcastSpectatorState(roomId: string, room: ExtendedRoom): Promise<void> {
+  if (!room.game) return;
+
+  const game = room.game;
+  const handId = game.id;
+
+  // Load all hole cards for spectator view
+  let holeCardsByAgent: Record<string, import('./types').Card[]> = {};
+  if (handId && game.phase !== 'waiting') {
+    holeCardsByAgent = await loadAllHoleCards(handId);
+  }
+
+  // Calculate equity
+  let equity: Map<string, number> | null = null;
+  if (game.phase !== 'waiting' && game.phase !== 'showdown') {
+    const hasCards = Object.values(holeCardsByAgent).some(c => c.length === 2);
+    if (hasCards) {
+      const cached = equityCache.get(roomId);
+      if (cached && cached.version === room.stateVersion) {
+        equity = cached.equity;
+      } else {
+        equity = calculateEquity(
+          game.players.map(p => ({
+            agentId: p.agentId,
+            holeCards: holeCardsByAgent[p.agentId] ?? [],
+            hasFolded: p.hasFolded,
+          })),
+          game.communityCards,
+        );
+        equityCache.set(roomId, { version: room.stateVersion, equity });
+      }
+    }
+  }
+
+  const now = Date.now();
+  const deadline = room.turnDeadlineMs ?? null;
+  const turnTimeRemaining = deadline !== null ? Math.max(0, Math.round((deadline - now) / 1000)) : null;
+
+  const state: ClientGameState = {
+    id: game.id,
+    phase: game.phase,
+    players: game.players.map(p => ({
+      agentId: p.agentId,
+      name: p.name,
+      seatIndex: p.seatIndex,
+      chips: p.chips,
+      holeCards: holeCardsByAgent[p.agentId] ?? null,
+      currentBet: p.currentBet,
+      hasFolded: p.hasFolded,
+      hasActed: p.hasActed,
+      isAllIn: p.isAllIn,
+      isConnected: p.isConnected,
+      winProbability: equity?.get(p.agentId) ?? null,
+    })),
+    communityCards: game.communityCards,
+    pot: game.pot,
+    sidePots: game.sidePots,
+    currentPlayerIndex: game.currentPlayerIndex,
+    dealerIndex: game.dealerIndex,
+    smallBlind: game.smallBlind,
+    bigBlind: game.bigBlind,
+    minRaise: game.minRaise,
+    winners: game.winners,
+    lastAction: game.lastAction,
+    stateVersion: room.stateVersion ?? 0,
+    turnDeadline: deadline,
+    turnTimeRemaining,
+  };
+
+  // Fire-and-forget broadcast to spectators
+  supabase.channel(`room:${roomId}`).send({
+    type: 'broadcast',
+    event: 'game_state',
+    payload: state,
+  }).catch(() => {}); // never block on broadcast failure
 }
 
 export async function getValidActionsForRoom(roomId: string): Promise<ReturnType<typeof getValidActions>> {

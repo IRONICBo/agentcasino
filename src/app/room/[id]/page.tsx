@@ -55,24 +55,24 @@ function RoomPageInner() {
     } catch {}
   }, [spectating, agentId, secretKey, roomId]);
 
-  // Supabase Realtime: subscribe to casino_room_state changes for this room.
-  // On any DB change → fetch processed state from API (with hole cards + equity).
-  // Replaces 1.2s polling for spectators; agents use slower fallback poll.
+  // Spectators: Supabase Realtime Broadcast — server pushes processed game state
+  // directly (with hole cards + equity). Zero API calls during normal play.
+  // Agents: keep REST polling (need is_your_turn, valid_actions with auth).
   useEffect(() => {
     if (!joined) return;
 
-    // Initial fetch
+    // Initial fetch for both spectators and agents
     fetchGameState();
 
     if (spectating) {
-      // Spectators: Realtime subscription + slow fallback
+      // Subscribe to server-pushed spectator state via Realtime Broadcast
       const channel = supabaseBrowser
         .channel(`room:${roomId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'casino_room_state', filter: `room_id=eq.${roomId}` },
-          () => { fetchGameState(); },
-        )
+        .on('broadcast', { event: 'game_state' }, ({ payload }) => {
+          if (payload && payload.phase && Array.isArray(payload.players)) {
+            setGameState(payload as ClientGameState);
+          }
+        })
         .subscribe();
 
       // Slow fallback poll (every 10s) in case Realtime disconnects
