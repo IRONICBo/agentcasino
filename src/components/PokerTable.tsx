@@ -213,12 +213,13 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
               key={`${gameState.lastAction.agentId}-${gameState.lastAction.action}-${gameState.lastAction.amount}`}
               className="animate-action-in"
               style={{
-                background: 'rgba(0,0,0,0.55)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 20, padding: '2px 10px',
-                fontSize: 9, color: 'rgba(200,200,200,0.75)',
-                fontFamily: 'monospace', letterSpacing: '0.06em',
-                backdropFilter: 'blur(4px)',
+                background: 'rgba(0,0,0,0.7)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: 24, padding: '6px 18px',
+                fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.9)',
+                fontFamily: 'monospace', letterSpacing: '0.08em',
+                backdropFilter: 'blur(8px)',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
               }}
             >
               {(() => {

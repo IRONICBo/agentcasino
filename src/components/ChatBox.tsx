@@ -66,7 +66,7 @@ export function ChatBox({ messages, onSend, spectating }: ChatBoxProps) {
           <div className="w-2 h-2 rounded-full bg-red-500" style={{ animation: 'live-pulse 1.8s ease-in-out infinite' }} />
         </div>
         <h3
-          className="text-xs font-bold uppercase tracking-[0.15em]"
+          className="text-sm font-bold uppercase tracking-[0.15em]"
           style={{
             background: 'linear-gradient(135deg, #e5e7eb, #9ca3af)',
             WebkitBackgroundClip: 'text',
@@ -75,7 +75,7 @@ export function ChatBox({ messages, onSend, spectating }: ChatBoxProps) {
         >
           Live Chat
         </h3>
-        <div className="ml-auto text-[10px] text-gray-500 font-mono tabular-nums">
+        <div className="ml-auto text-xs text-gray-500 font-mono tabular-nums">
           {messages.length} msg{messages.length !== 1 ? 's' : ''}
         </div>
       </div>
@@ -99,7 +99,7 @@ export function ChatBox({ messages, onSend, spectating }: ChatBoxProps) {
               // System message
               <div className="flex items-center gap-1.5 w-full">
                 <div className="h-px flex-1 bg-gradient-to-r from-transparent via-amber-500/20 to-transparent" />
-                <span className="text-[10px] text-amber-400/70 font-medium whitespace-nowrap px-1">
+                <span className="text-xs text-amber-400/70 font-medium whitespace-nowrap px-1">
                   {msg.message}
                 </span>
                 <div className="h-px flex-1 bg-gradient-to-r from-transparent via-amber-500/20 to-transparent" />
@@ -112,10 +112,10 @@ export function ChatBox({ messages, onSend, spectating }: ChatBoxProps) {
                     {formatTime(msg.timestamp)}
                   </span>
                 )}
-                <span className={`text-xs font-bold shrink-0 ${getNameColor(msg.agentId, msg.name)}`}>
+                <span className={`text-sm font-bold shrink-0 ${getNameColor(msg.agentId, msg.name)}`}>
                   {msg.name}
                 </span>
-                <span className="text-xs text-gray-300 leading-relaxed break-words">{msg.message}</span>
+                <span className="text-sm text-gray-300 leading-relaxed break-words">{msg.message}</span>
               </>
             )}
           </div>
@@ -136,7 +136,7 @@ export function ChatBox({ messages, onSend, spectating }: ChatBoxProps) {
               ref={inputRef}
               type="text"
               placeholder={spectating ? 'Chat as spectator...' : 'Send a message...'}
-              className="flex-1 text-xs text-white placeholder-gray-500 px-3 py-2 rounded-xl outline-none transition-all duration-200
+              className="flex-1 text-sm text-white placeholder-gray-500 px-3 py-2.5 rounded-xl outline-none transition-all duration-200
                 focus:ring-1 focus:ring-emerald-500/40"
               style={{
                 background: 'rgba(255,255,255,0.05)',
@@ -146,7 +146,7 @@ export function ChatBox({ messages, onSend, spectating }: ChatBoxProps) {
             />
             <button
               onClick={handleSend}
-              className="px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200
+              className="px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200
                 bg-gradient-to-b from-emerald-500 to-emerald-700
                 hover:from-emerald-400 hover:to-emerald-600
                 active:from-emerald-600 active:to-emerald-800 active:scale-95

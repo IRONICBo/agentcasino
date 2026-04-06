@@ -392,7 +392,7 @@ function RoomPageInner() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
           <div className="flex items-center justify-center min-h-[calc(100vh-6rem)] py-4">
             <PokerTable
               gameState={gameState ?? {
