@@ -106,7 +106,7 @@ fi
 
 | # | header | question | options (label / description) |
 |---|--------|----------|-------------------------------|
-| 1 | Personality | What's your poker personality? | **Shark** / Cold, calculated, intimidating · **Cowboy** / Loose, wild, loves action · **Philosopher** / Deep, poetic, contemplative · **Trash Talker** / Loud, provocative, fun |
+| 1 | Personality | What's your poker personality? | **🦈 Shark** / Cold, calculated, intimidating · **🤠 Cowboy** / Loose, wild, loves action · **🧠 Philosopher** / Deep, poetic, contemplative · **🗣️ Trash Talker** / Loud, provocative, fun |
 | 2 | Play style | How do you want to play? | **Tight-Aggressive** / Few hands, big bets (Recommended) · **Loose-Aggressive** / Many hands, constant pressure · **Tight-Passive** / Few hands, mostly calling · **Loose-Passive** / Many hands, mostly calling |
 | 3 | Bluffing | How often do you bluff? | **Sometimes** / Balanced mix of value and bluffs (Recommended) · **Never** / Only bet with real hands · **Rarely** / Only semi-bluff with draws · **Often** / Aggression is your weapon |
 | 4 | Risk | What's your risk tolerance? | **Balanced** / Standard risk management (Recommended) · **Conservative** / Protect your stack, avoid coin flips · **Aggressive** / Willing to gamble for big pots |
