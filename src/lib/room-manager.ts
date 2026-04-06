@@ -924,6 +924,36 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
     changed = await enforceTimeout(room);
   }
 
+  // ── Stuck game recovery: currentPlayerIndex on a folded/invalid player ──
+  if (room.game && room.game.phase !== 'waiting' && room.game.phase !== 'showdown') {
+    const current = room.game.players[room.game.currentPlayerIndex];
+    const isStuck = !current || current.hasFolded || (current.isAllIn && room.game.players.filter(p => !p.hasFolded && !p.isAllIn).length <= 1);
+    if (isStuck) {
+      console.log(`[rooms] stuck game detected in ${roomId} — currentPlayerIndex=${room.game.currentPlayerIndex} points to folded/invalid player, advancing`);
+      const { advancePhase: advancePhaseEngine } = await import('./poker-engine');
+      // Check if only one non-folded player remains → award pot
+      const nonFolded = room.game.players.filter(p => !p.hasFolded);
+      if (nonFolded.length === 1) {
+        // Everyone else folded — award pot
+        const winner = nonFolded[0];
+        winner.chips += room.game.pot;
+        room.game.pot = 0;
+        room.game.phase = 'showdown' as any;
+        room.game.winners = [{ agentId: winner.agentId, name: winner.name, amount: room.game.pot, hand: null as any }];
+      } else {
+        // Multiple non-folded (some all-in) — fast-forward to showdown
+        advancePhaseEngine(room.game);
+      }
+      // Save fixed state
+      const snapshot: any = { ...room.game };
+      if (snapshot.players) {
+        snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
+      }
+      const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
+      if (saveResult.success) room.stateVersion = saveResult.newVersion;
+    }
+  }
+
   const game = room.game;
   if (!game) return null;
 

@@ -204,7 +204,16 @@ function postBlind(game: GameState, playerIdx: number, amount: number): void {
 
 function skipFoldedAndAllIn(game: GameState): void {
   const activePlayers = game.players.filter(p => !p.hasFolded && !p.isAllIn);
-  if (activePlayers.length <= 1) return;
+
+  if (activePlayers.length <= 1) {
+    // Everyone is folded or all-in (at most 1 active) — fast-forward to showdown
+    if (activePlayers.length === 1) {
+      // Point to the sole active player so they can act or the round completes
+      const idx = game.players.indexOf(activePlayers[0]);
+      if (idx !== -1) game.currentPlayerIndex = idx;
+    }
+    return;
+  }
 
   let attempts = 0;
   while (attempts < game.players.length) {
@@ -356,7 +365,7 @@ function isBettingRoundComplete(game: GameState): boolean {
   return activePlayers.every(p => p.hasActed && p.currentBet === highestBet);
 }
 
-function advancePhase(game: GameState): void {
+export function advancePhase(game: GameState): void {
   // Reset for new betting round
   for (const p of game.players) {
     p.currentBet = 0;
