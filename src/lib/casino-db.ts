@@ -114,17 +114,23 @@ export async function recordGame(record: GameRecord): Promise<void> {
   const { error: e } = await supabase.from('casino_game_players').insert(playerRows);
   if (e) console.error('[casino-db] recordGamePlayers:', e.message);
 
-  // Bump games_played for each participant
+  // Bump games_played / games_won / total_won for each participant
   const ids = record.players.map(p => p.agentId);
+  const winnerIds = new Set(record.winners.map(w => w.agentId));
+  const winAmounts = new Map(record.winners.map(w => [w.agentId, w.amount ?? 0]));
+
   const { data: agentsData } = await supabase.from('casino_agents')
-    .select('id, games_played')
+    .select('id, games_played, games_won, total_won')
     .in('id', ids);
   if (agentsData) {
-    for (const a of agentsData) {
-      await supabase.from('casino_agents')
-        .update({ games_played: a.games_played + 1 })
-        .eq('id', a.id);
-    }
+    await Promise.all(agentsData.map(a => {
+      const isWinner = winnerIds.has(a.id);
+      return supabase.from('casino_agents').update({
+        games_played: (a.games_played ?? 0) + 1,
+        games_won:    (a.games_won   ?? 0) + (isWinner ? 1 : 0),
+        total_won:    (a.total_won   ?? 0) + (isWinner ? (winAmounts.get(a.id) ?? 0) : 0),
+      }).eq('id', a.id);
+    }));
   }
 }
 
