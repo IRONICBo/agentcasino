@@ -5,6 +5,7 @@ import {
   saveRoomState, deleteRoomState,
   loadRoomState, loadAllRoomStates, saveRoomStateWithVersion, deductChipsAtomic, addChipsAtomic,
   saveAllHoleCards, loadHoleCards, loadAllHoleCards, deleteHandCards,
+  saveChatMessage, loadChatMessages, trimChatMessages,
 } from './casino-db';
 import { calculateEquity } from './equity';
 import { supabase } from './supabase';
@@ -105,29 +106,32 @@ const STALE_PLAYER_MS = 5 * 60 * 1000; // 5 minutes without interaction → ghos
 // ─── Showdown delay (ms before next hand starts) ────────────────────────────
 const SHOWDOWN_DELAY_MS = 3_000;
 
-// ─── Chat (in-memory, ephemeral by design) ─────────────────────────────────
+// ─── Chat (persisted to Supabase) ────────────────────────────────────────────
 
+// Counter to trigger periodic trim (every ~50 messages per room)
 const globalAny = globalThis as any;
-if (!globalAny.__casino_chat) globalAny.__casino_chat = new Map<string, ChatMsg[]>();
-const chatStore: Map<string, ChatMsg[]> = globalAny.__casino_chat;
-
-const MAX_CHAT = 100;
+if (!globalAny.__casino_chat_count) globalAny.__casino_chat_count = new Map<string, number>();
+const chatCounters: Map<string, number> = globalAny.__casino_chat_count;
 
 export function addChatMessage(roomId: string, agentId: string, name: string, message: string): ChatMsg | null {
-  // Verify room ID parses correctly
   if (!parseRoomId(roomId)) return null;
-  let log = chatStore.get(roomId);
-  if (!log) { log = []; chatStore.set(roomId, log); }
   const msg: ChatMsg = { agentId, name, message, timestamp: Date.now() };
-  log.push(msg);
-  if (log.length > MAX_CHAT) chatStore.set(roomId, log.slice(-MAX_CHAT));
+
+  // Fire-and-forget persist to Supabase
+  saveChatMessage(roomId, agentId, name, message);
+
+  // Periodic trim: every 50 messages, clean up old ones
+  const count = (chatCounters.get(roomId) ?? 0) + 1;
+  chatCounters.set(roomId, count);
+  if (count % 50 === 0) {
+    trimChatMessages(roomId);
+  }
+
   return msg;
 }
 
-export function getChatMessages(roomId: string, limit = 50): ChatMsg[] {
-  const log = chatStore.get(roomId);
-  if (!log) return [];
-  return log.slice(-limit);
+export async function getChatMessages(roomId: string, limit = 50): Promise<ChatMsg[]> {
+  return loadChatMessages(roomId, limit);
 }
 
 // ─── Equity cache ──────────────────────────────────────────────────────────

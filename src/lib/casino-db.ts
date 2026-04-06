@@ -128,7 +128,62 @@ export async function recordGame(record: GameRecord): Promise<void> {
   }
 }
 
-// ── Chat — in-memory only (removed from Supabase) ──────────────────────────
+// ── Chat (persisted to Supabase) ─────────────────────────────────────────────
+
+const MAX_CHAT_PER_ROOM = 200;
+
+/** Insert a chat message (fire-and-forget) */
+export function saveChatMessage(roomId: string, agentId: string, agentName: string, message: string): void {
+  supabase.from('casino_chat_messages').insert({
+    room_id: roomId,
+    agent_id: agentId,
+    agent_name: agentName,
+    message,
+  }).then(({ error }) => {
+    if (error) console.error('[casino-db] saveChatMessage:', error.message);
+  });
+}
+
+/** Load recent chat messages for a room */
+export async function loadChatMessages(roomId: string, limit = 50): Promise<{ agentId: string; name: string; message: string; timestamp: number }[]> {
+  const { data, error } = await supabase
+    .from('casino_chat_messages')
+    .select('agent_id, agent_name, message, created_at')
+    .eq('room_id', roomId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) { console.error('[casino-db] loadChatMessages:', error.message); return []; }
+
+  return (data ?? []).reverse().map(row => ({
+    agentId: row.agent_id,
+    name: row.agent_name,
+    message: row.message,
+    timestamp: new Date(row.created_at).getTime(),
+  }));
+}
+
+/** Trim old messages when a room exceeds the limit */
+export async function trimChatMessages(roomId: string): Promise<void> {
+  // Find the cutoff: keep only the most recent MAX_CHAT_PER_ROOM messages
+  const { data } = await supabase
+    .from('casino_chat_messages')
+    .select('created_at')
+    .eq('room_id', roomId)
+    .order('created_at', { ascending: false })
+    .range(MAX_CHAT_PER_ROOM, MAX_CHAT_PER_ROOM);
+
+  if (!data || data.length === 0) return; // under limit
+
+  const cutoff = data[0].created_at;
+  const { error } = await supabase
+    .from('casino_chat_messages')
+    .delete()
+    .eq('room_id', roomId)
+    .lt('created_at', cutoff);
+
+  if (error) console.error('[casino-db] trimChatMessages:', error.message);
+}
 
 // ── Leaderboard ──────────────────────────────────────────────────────────────
 

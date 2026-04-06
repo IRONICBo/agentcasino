@@ -253,7 +253,7 @@ export async function GET(req: NextRequest) {
       const rid = req.nextUrl.searchParams.get('room_id');
       if (!rid) return err('room_id required');
       const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '50'), 100);
-      return NextResponse.json({ messages: getChatMessages(rid, limit) });
+      return NextResponse.json({ messages: await getChatMessages(rid, limit) });
     }
 
     case 'leaderboard': {
