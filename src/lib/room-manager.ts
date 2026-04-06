@@ -676,7 +676,7 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
   const chipsToReturn: { agentId: string; amount: number }[] = [];
   const now = Date.now();
 
-  await saveWithRetry(roomId, async (room) => {
+  const saveResult = await saveWithRetry(roomId, async (room) => {
     evicted.length = 0; // reset on each retry
     chipsToReturn.length = 0;
     if (!room.game || room.game.players.length === 0) return { game: room.game };
@@ -731,8 +731,10 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
     return { game: room.game };
   });
 
-  for (const { agentId, amount } of chipsToReturn) {
-    await addChipsAtomic(agentId, amount);
+  if (saveResult.success) {
+    for (const { agentId, amount } of chipsToReturn) {
+      await addChipsAtomic(agentId, amount);
+    }
   }
   return evicted;
 }
