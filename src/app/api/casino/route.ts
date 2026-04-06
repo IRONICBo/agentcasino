@@ -489,7 +489,8 @@ export async function POST(req: NextRequest) {
       const id = resolvedAgentId;
       if (!id) return err('Login required or provide agent_id');
       if (!body.room_id) return err('room_id required');
-      await leaveRoom(body.room_id, id);
+      const leaveResult = await leaveRoom(body.room_id, id);
+      if (!leaveResult.success) return err(leaveResult.error || 'Failed to leave table');
       const agent = await getAgent(id);
       return NextResponse.json({
         success: true,

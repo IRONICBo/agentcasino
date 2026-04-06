@@ -414,39 +414,73 @@ export async function joinRoom(roomId: string, agentId: string, agentName: strin
   return null;
 }
 
-export async function leaveRoom(roomId: string, agentId: string): Promise<void> {
-  await saveWithRetry(roomId, async (room) => {
+export async function leaveRoom(roomId: string, agentId: string): Promise<{ success: boolean; error?: string }> {
+  // Track what chips need returning — only refund AFTER save succeeds
+  let chipsToReturn = 0;
+  let potReduction = 0;
+  let pendingFlush: { agentId: string; chips: number }[] = [];
+
+  const result = await saveWithRetry(roomId, async (room) => {
     if (!room.game) return { game: null };
 
     const player = room.game.players.find(p => p.agentId === agentId);
     if (!player) return { game: room.game };
+
+    // Reset deferred amounts for this retry attempt
+    chipsToReturn = 0;
+    potReduction = 0;
+    pendingFlush = [];
 
     const phase = room.game.phase;
     const isActiveHand = phase !== 'waiting' && phase !== 'showdown';
 
     if (isActiveHand) {
       // Mid-hand: fold + mark pendingLeave — chips returned at hand end
+      player.isConnected = false;
       const outcome = safeMidHandRemove(room.game, agentId);
       if (outcome === 'removed') {
         // Race: phase changed between check and call
-        const totalReturn = player.chips + player.currentBet;
-        if (totalReturn > 0) await addChipsAtomic(agentId, totalReturn);
+        chipsToReturn = player.chips + player.currentBet;
       }
     } else {
-      // Between hands: remove immediately, return chips
+      // Between hands: remove immediately, defer chip return
       const removed = removePlayer(room.game, agentId);
       if (removed) {
-        const totalReturn = removed.chips + removed.currentBet;
-        if (totalReturn > 0) {
-          await addChipsAtomic(agentId, totalReturn);
-          room.game.pot = Math.max(0, room.game.pot - removed.currentBet);
-        }
+        chipsToReturn = removed.chips + removed.currentBet;
+        potReduction = removed.currentBet;
+        room.game.pot = Math.max(0, room.game.pot - potReduction);
       }
     }
 
     if (room.game.players.length === 0) return { game: null };
+
+    // All remaining players are pendingLeave — no one to continue the hand
+    const allPending = room.game.players.every(p => p.pendingLeave);
+    if (allPending) {
+      for (const p of [...room.game.players]) {
+        const totalReturn = p.chips + p.currentBet;
+        if (totalReturn > 0) pendingFlush.push({ agentId: p.agentId, chips: totalReturn });
+        removePlayer(room.game, p.agentId);
+      }
+      return { game: null };
+    }
+
     return { game: room.game };
   });
+
+  if (!result.success) {
+    return { success: false, error: result.error || 'Failed to leave table — please retry' };
+  }
+
+  // Save succeeded — now atomically return chips
+  if (chipsToReturn > 0) {
+    await addChipsAtomic(agentId, chipsToReturn);
+  }
+  for (const pf of pendingFlush) {
+    await addChipsAtomic(pf.agentId, pf.chips);
+  }
+
+  return { success: true };
 }
 
 // ─── Game actions ─────────────────────────────────────────────────────────────
@@ -643,7 +677,24 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
       }
     }
 
-    if (room.game!.players.length === 0) return { game: null };
+    // If all players removed (or only pendingLeave left), flush remaining chips
+    // before deleting the room — tryStartNextHand will never run on an empty room
+    if (room.game!.players.length === 0) {
+      return { game: null };
+    }
+
+    const allPending = room.game!.players.every(p => p.pendingLeave);
+    if (allPending) {
+      for (const p of [...room.game!.players]) {
+        const totalReturn = p.chips + p.currentBet;
+        if (totalReturn > 0) {
+          await addChipsAtomic(p.agentId, totalReturn);
+        }
+        removePlayer(room.game!, p.agentId);
+      }
+      return { game: null };
+    }
+
     return { game: room.game };
   });
 
@@ -936,7 +987,7 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
       hasFolded: p.hasFolded,
       hasActed: p.hasActed,
       isAllIn: p.isAllIn,
-      isConnected: p.isConnected,
+      isConnected: p.isConnected && (Date.now() - (p.lastSeenAt ?? 0)) < 60_000,
       winProbability: isSpectator ? (equity?.get(p.agentId) ?? null) : null,
     };
   });
@@ -1020,7 +1071,7 @@ async function broadcastSpectatorState(roomId: string, room: ExtendedRoom): Prom
       hasFolded: p.hasFolded,
       hasActed: p.hasActed,
       isAllIn: p.isAllIn,
-      isConnected: p.isConnected,
+      isConnected: p.isConnected && (now - (p.lastSeenAt ?? 0)) < 60_000,
       winProbability: equity?.get(p.agentId) ?? null,
     })),
     communityCards: game.communityCards,

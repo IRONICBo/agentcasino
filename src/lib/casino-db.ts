@@ -460,25 +460,19 @@ export async function deductChipsAtomic(agentId: string, amount: number): Promis
 }
 
 /**
- * Atomic chip addition: UPDATE chips = chips + amount.
+ * Atomic chip addition: UPDATE chips = chips + amount via SQL function.
+ * Uses a single UPDATE statement — no read-then-write race.
  */
 export async function addChipsAtomic(agentId: string, amount: number): Promise<number | null> {
-  const { data: agent, error: readErr } = await supabase
-    .from('casino_agents')
-    .select('chips')
-    .eq('id', agentId)
-    .single();
-  if (readErr || !agent) return null;
-
-  const newChips = agent.chips + amount;
-  const { data: updated, error: updateErr } = await supabase
-    .from('casino_agents')
-    .update({ chips: newChips })
-    .eq('id', agentId)
-    .select('chips');
-
-  if (updateErr || !updated || updated.length === 0) return null;
-  return updated[0].chips;
+  const { data, error } = await supabase.rpc('add_chips', {
+    p_agent_id: agentId,
+    p_amount: amount,
+  });
+  if (error) {
+    console.error('[casino-db] addChipsAtomic rpc error:', error.message);
+    return null;
+  }
+  return data;
 }
 
 /** Load full agent record from DB */

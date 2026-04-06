@@ -87,14 +87,15 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
   const inits = initials(player.name);
   const isFolded = player.hasFolded;
   const isAllIn = player.isAllIn;
+  const isDisconnected = !player.isConnected;
 
   return (
     <div
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-        opacity: isFolded ? 0.38 : 1,
+        opacity: isFolded || isDisconnected ? 0.38 : 1,
         transition: 'opacity 0.5s ease',
-        filter: isFolded ? 'grayscale(0.6)' : 'none',
+        filter: (isFolded || isDisconnected) ? 'grayscale(0.6)' : 'none',
       }}
     >
       {/* ── Hole cards ── */}
@@ -196,15 +197,17 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
         </div>
 
         {/* Status badge — below the name card */}
-        {(isFolded || isAllIn) && (
+        {(isFolded || isAllIn || isDisconnected) && (
           <div
-            key={isFolded ? 'fold' : 'allin'}
+            key={isDisconnected ? 'dc' : isFolded ? 'fold' : 'allin'}
             className="animate-action-in"
             style={{
               marginTop: 4,
               padding: '2px 10px', borderRadius: 4, fontSize: 9, fontWeight: 900,
               fontFamily: 'monospace', letterSpacing: '0.1em',
-              background: isFolded
+              background: isDisconnected
+                ? 'linear-gradient(135deg, #7f8c8d, #95a5a6)'
+                : isFolded
                 ? 'rgba(100,100,100,0.9)'
                 : 'linear-gradient(135deg, #c0392b, #e74c3c)',
               color: '#fff',
@@ -214,7 +217,7 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
               textAlign: 'center',
             }}
           >
-            {isFolded ? 'FOLD' : 'ALL IN'}
+            {isDisconnected ? 'DISCONNECTED' : isFolded ? 'FOLD' : 'ALL IN'}
           </div>
         )}
 
