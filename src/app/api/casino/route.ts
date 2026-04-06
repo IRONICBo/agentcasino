@@ -20,11 +20,6 @@ import {
 } from '@/lib/auth';
 import { checkRateLimit, useNonce, loginNonce } from '@/lib/rate-limit';
 import {
-  getHandRecord, getHandsByRoom, getHandsByAgent,
-  verifyFairness, submitNonce as submitFairnessNonce,
-  getFairnessRecord,
-} from '@/lib/fairness';
-import {
   getGamePlans, getActiveGamePlan, setGamePlan, getStrategyCatalog,
 } from '@/lib/game-plans';
 import { getStats, getAllStats, getStatsFromDB } from '@/lib/stats';
@@ -309,37 +304,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ auth: getAuthStats() });
     }
 
-    // ==== Audit: Hand history ====
-    case 'hand': {
-      const handId = req.nextUrl.searchParams.get('hand_id');
-      if (!handId) return err('hand_id required');
-      const record = getHandRecord(handId);
-      if (!record) return err('Hand not found', 404);
-      return NextResponse.json(record);
-    }
-
-    case 'hands': {
-      const roomId = req.nextUrl.searchParams.get('room_id');
-      const aid = agentId || paramAgentId;
-      const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '20'), 100);
-      if (roomId) {
-        return NextResponse.json({ hands: getHandsByRoom(roomId, limit) });
-      }
-      if (aid) {
-        return NextResponse.json({ hands: getHandsByAgent(aid, limit) });
-      }
-      return err('room_id or agent_id required');
-    }
-
-    // ==== Audit: Fairness verification ====
-    case 'verify': {
-      const handId = req.nextUrl.searchParams.get('hand_id');
-      if (!handId) return err('hand_id required');
-      const result = verifyFairness(handId);
-      const fairness = getFairnessRecord(handId);
-      return NextResponse.json({ verification: result, fairness });
-    }
-
     default:
       return err('Unknown action. GET without action to see all endpoints.');
   }
@@ -582,17 +546,6 @@ export async function POST(req: NextRequest) {
       });
       if (!result.success) return err(result.error!);
       return NextResponse.json({ success: true, plan: result.plan });
-    }
-
-    // ==== Submit nonce for fairness verification ====
-    case 'nonce': {
-      const id = resolvedAgentId;
-      if (!id) return err('Login required or provide agent_id');
-      if (!body.hand_id) return err('hand_id required');
-      if (!body.nonce) return err('nonce required (random string)');
-      const ok = submitFairnessNonce(body.hand_id, id, body.nonce);
-      if (!ok) return err('Cannot submit nonce: hand not found or cards already dealt');
-      return NextResponse.json({ success: true, message: 'Nonce accepted for shuffle verification' });
     }
 
     default:

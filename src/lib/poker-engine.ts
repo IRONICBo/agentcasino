@@ -2,11 +2,7 @@ import { v4 as uuid } from 'uuid';
 import { Card, GameState, GamePhase, Player, PlayerAction, WinnerInfo, SidePot } from './types';
 import { createDeck } from './deck';
 import { evaluateHand, compareHands } from './hand-evaluator';
-import {
-  commitSeed, generateFairDeck, recordHoleCards, recordAction,
-  recordCommunityCards, endHandRecord, startHandRecord,
-  getFairnessRecord,
-} from './fairness';
+import { commitSeed, generateFairDeck } from './fairness';
 import { trackHandStart, trackAction, trackHandEnd } from './stats';
 
 export function createGame(smallBlind: number, bigBlind: number): GameState {
@@ -157,20 +153,6 @@ export function startNewHand(game: GameState, roomId?: string, roomName?: string
   // Deal hole cards
   for (const p of game.players) {
     p.holeCards = [game.deck.pop()!, game.deck.pop()!];
-  }
-
-  // === HAND HISTORY: Record start ===
-  const fairnessRecord = getFairnessRecord(handId);
-  if (fairnessRecord && roomId) {
-    startHandRecord(
-      handId, roomId, roomName || roomId,
-      game.players.map(p => ({ agentId: p.agentId, name: p.name, startingChips: p.chips + p.currentBet, seatIndex: p.seatIndex })),
-      fairnessRecord,
-    );
-    // Record hole cards for later reveal
-    for (const p of game.players) {
-      recordHoleCards(handId, p.agentId, p.holeCards);
-    }
   }
 
   // Post blinds
@@ -333,8 +315,7 @@ export function processAction(game: GameState, agentId: string, action: PlayerAc
   player.hasActed = true;
   game.lastAction = { agentId, action, amount };
 
-  // Record action in hand history + stats
-  recordAction(game.id, agentId, player.name, action, game.phase, amount);
+  // Stats tracking
   trackAction(game.id, agentId, action, game.phase);
 
   // Check if only one player remains
@@ -428,10 +409,6 @@ function awardPotToLastPlayer(game: GameState, winner: Player): void {
   }];
   game.pot = 0;
 
-  // Record hand end in history + stats
-  endHandRecord(game.id, game.winners.map(w => ({
-    agentId: w.agentId, name: w.name, amount: w.amount, hand: w.hand.description,
-  })), [{ amount, winners: [winner.agentId] }], game.communityCards);
   trackHandEnd(game.id, [winner.agentId], false);
 }
 
@@ -476,10 +453,6 @@ function resolveShowdown(game: GameState): void {
   game.pot = 0;
   game.sidePots = pots;
 
-  // Record hand end in history + stats
-  endHandRecord(game.id, winners.map(w => ({
-    agentId: w.agentId, name: w.name, amount: w.amount, hand: w.hand.description,
-  })), pots.map(p => ({ amount: p.amount, winners: p.eligiblePlayerIds })), game.communityCards);
   trackHandEnd(game.id, winners.map(w => w.agentId), true);
 }
 
