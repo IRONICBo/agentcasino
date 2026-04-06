@@ -45,6 +45,8 @@ export function addPlayer(game: GameState, agentId: string, name: string, chips:
     hasActed: false,
     isAllIn: false,
     isConnected: true,
+    lastSeenAt: Date.now(),
+    pendingLeave: false,
   });
   return true;
 }
@@ -53,7 +55,63 @@ export function removePlayer(game: GameState, agentId: string): Player | null {
   const idx = game.players.findIndex(p => p.agentId === agentId);
   if (idx === -1) return null;
   const [player] = game.players.splice(idx, 1);
+
+  if (game.players.length === 0) {
+    game.currentPlayerIndex = 0;
+    game.dealerIndex = 0;
+    return player;
+  }
+
+  // Adjust dealerIndex after splice
+  if (idx < game.dealerIndex) {
+    game.dealerIndex--;
+  }
+  game.dealerIndex = game.dealerIndex % game.players.length;
+
+  // Adjust currentPlayerIndex after splice
+  if (idx < game.currentPlayerIndex) {
+    game.currentPlayerIndex--;
+  }
+  game.currentPlayerIndex = game.currentPlayerIndex % game.players.length;
+
   return player;
+}
+
+/**
+ * Gracefully remove a player mid-hand: fold + mark pendingLeave.
+ * Between hands: remove immediately.
+ * All-in: mark pendingLeave only (they stay for showdown).
+ */
+export function safeMidHandRemove(
+  game: GameState,
+  agentId: string,
+): 'removed' | 'folded_pending' | 'pending' | 'not_found' {
+  const player = game.players.find(p => p.agentId === agentId);
+  if (!player) return 'not_found';
+
+  // Between hands — remove immediately
+  if (game.phase === 'waiting' || game.phase === 'showdown') {
+    removePlayer(game, agentId);
+    return 'removed';
+  }
+
+  // All-in — can't fold, just mark for removal after hand
+  if (player.isAllIn) {
+    player.pendingLeave = true;
+    return 'pending';
+  }
+
+  // It's this player's turn — fold first, then mark
+  const isCurrentTurn = game.players[game.currentPlayerIndex]?.agentId === agentId;
+  if (isCurrentTurn) {
+    processAction(game, agentId, 'fold');
+  } else {
+    // Not their turn — just mark as folded
+    player.hasFolded = true;
+  }
+
+  player.pendingLeave = true;
+  return 'folded_pending';
 }
 
 export function canStartGame(game: GameState): boolean {

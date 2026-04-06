@@ -1,5 +1,5 @@
 import { Room, RoomInfo, StakeCategory, ClientGameState, ClientPlayer, GameState } from './types';
-import { createGame, addPlayer, removePlayer, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
+import { createGame, addPlayer, removePlayer, safeMidHandRemove, canStartGame, startNewHand, processAction, getValidActions } from './poker-engine';
 import { deductChips, addChips, getAgent } from './chips';
 import {
   saveRoomState, deleteRoomState,
@@ -97,6 +97,9 @@ interface ExtendedRoom extends Room {
 // ─── Turn timer constant ───────────────────────────────────────────────────────
 
 const TURN_TIMEOUT_MS = 30_000;
+
+// ─── Stale player eviction ──────────────────────────────────────────────────
+const STALE_PLAYER_MS = 5 * 60 * 1000; // 5 minutes without interaction → ghost
 
 // ─── Showdown delay (ms before next hand starts) ────────────────────────────
 const SHOWDOWN_DELAY_MS = 3_000;
@@ -207,6 +210,14 @@ async function loadRoom(roomId: string): Promise<ExtendedRoom | null> {
       room.game = gameState;
       room.stateVersion = saved.stateVersion;
     }
+
+    // Backward compat: ensure new Player fields exist on restored data
+    if (room.game?.players) {
+      for (const p of room.game.players) {
+        p.lastSeenAt = p.lastSeenAt ?? Date.now();
+        p.pendingLeave = p.pendingLeave ?? false;
+      }
+    }
   }
 
   return room;
@@ -275,19 +286,20 @@ async function enforceTimeout(room: ExtendedRoom): Promise<boolean> {
   timeoutCounts[key] = (timeoutCounts[key] ?? 0) + 1;
 
   if (timeoutCounts[key] >= 3) {
-    // Kick after 3 consecutive timeouts
+    // Kick after 3 consecutive timeouts — fold + mark pendingLeave
     console.log(`[kick] ${currentPlayer.name} kicked from ${room.id} after ${timeoutCounts[key]} consecutive timeouts`);
     delete timeoutCounts[key];
 
-    const player = removePlayer(room.game, currentPlayer.agentId);
-    if (player) {
-      const totalReturn = player.chips + player.currentBet;
+    const outcome = safeMidHandRemove(room.game, currentPlayer.agentId);
+    if (outcome === 'removed') {
+      // Between hands — immediate removal
+      const totalReturn = currentPlayer.chips + currentPlayer.currentBet;
       if (totalReturn > 0) {
         await addChipsAtomic(currentPlayer.agentId, totalReturn);
-        room.game.pot = Math.max(0, room.game.pot - player.currentBet);
+        room.game.pot = Math.max(0, room.game.pot - currentPlayer.currentBet);
       }
     }
-    // Player removed from game_json via saveWithRetry above
+    // 'folded_pending' or 'pending' → removed in tryStartNextHand
   } else {
     // Auto-fold
     console.log(`[auto-fold] ${currentPlayer.name} timed out in ${room.id} (${timeoutCounts[key]}/3)`);
@@ -399,31 +411,38 @@ export async function joinRoom(roomId: string, agentId: string, agentName: strin
 }
 
 export async function leaveRoom(roomId: string, agentId: string): Promise<void> {
-  const room = await loadRoom(roomId);
-  if (!room || !room.game) return;
+  await saveWithRetry(roomId, async (room) => {
+    if (!room.game) return { game: null };
 
-  const player = removePlayer(room.game, agentId);
-  if (player) {
-    const totalReturn = player.chips + player.currentBet;
-    if (totalReturn > 0) {
-      await addChipsAtomic(agentId, totalReturn);
-      room.game.pot = Math.max(0, room.game.pot - player.currentBet);
+    const player = room.game.players.find(p => p.agentId === agentId);
+    if (!player) return { game: room.game };
+
+    const phase = room.game.phase;
+    const isActiveHand = phase !== 'waiting' && phase !== 'showdown';
+
+    if (isActiveHand) {
+      // Mid-hand: fold + mark pendingLeave — chips returned at hand end
+      const outcome = safeMidHandRemove(room.game, agentId);
+      if (outcome === 'removed') {
+        // Race: phase changed between check and call
+        const totalReturn = player.chips + player.currentBet;
+        if (totalReturn > 0) await addChipsAtomic(agentId, totalReturn);
+      }
+    } else {
+      // Between hands: remove immediately, return chips
+      const removed = removePlayer(room.game, agentId);
+      if (removed) {
+        const totalReturn = removed.chips + removed.currentBet;
+        if (totalReturn > 0) {
+          await addChipsAtomic(agentId, totalReturn);
+          room.game.pot = Math.max(0, room.game.pot - removed.currentBet);
+        }
+      }
     }
-  }
 
-  room.spectators = room.spectators.filter(id => id !== agentId);
-  // Player removed from game_json via saveWithRetry above
-
-  // Save updated state — strip hole cards
-  if (room.game.players.length === 0) {
-    await deleteRoomState(roomId);
-  } else {
-    const snapshot: any = { ...room.game };
-    if (snapshot.players) {
-      snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
-    }
-    await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
-  }
+    if (room.game.players.length === 0) return { game: null };
+    return { game: room.game };
+  });
 }
 
 // ─── Game actions ─────────────────────────────────────────────────────────────
@@ -453,11 +472,14 @@ export async function handleAction(
     const success = processAction(room.game, agentId, action as any, amount);
     if (!success) return { game: null, error: 'Invalid action for current game state' };
 
-    // Real action resets consecutive timeout count
+    // Real action resets consecutive timeout count + update lastSeenAt
     if (!isTimeout) {
       const timeoutCounts: Record<string, number> = (room.game as any)._timeoutCounts ?? {};
       delete timeoutCounts[agentId];
       (room.game as any)._timeoutCounts = timeoutCounts;
+
+      const actingPlayer = room.game.players.find(p => p.agentId === agentId);
+      if (actingPlayer) actingPlayer.lastSeenAt = Date.now();
     }
 
     // Set turn deadline for next player
@@ -545,7 +567,15 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
     for (const p of bustedPlayers) {
       console.log(`[rooms] busted player ${p.name} (${p.agentId}) removed from ${roomId}`);
       removePlayer(room.game, p.agentId);
-      // Busted player removed from game_json
+    }
+
+    // Flush players who left mid-hand (pendingLeave)
+    const pendingLeavePlayers = room.game.players.filter(p => p.pendingLeave);
+    for (const p of pendingLeavePlayers) {
+      console.log(`[rooms] pending-leave player ${p.name} (${p.agentId}) removed from ${roomId}`);
+      const totalReturn = p.chips; // currentBet is 0 after showdown reset
+      removePlayer(room.game, p.agentId);
+      if (totalReturn > 0) await addChipsAtomic(p.agentId, totalReturn);
     }
 
     if (room.game.players.length < 2) return { game: null, error: 'not enough players after bust' };
@@ -569,6 +599,51 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
   });
 
   return result.success;
+}
+
+// ─── Stale player eviction ────────────────────────────────────────────────────
+
+export async function evictStalePlayers(roomId: string): Promise<string[]> {
+  const evicted: string[] = [];
+  const now = Date.now();
+
+  await saveWithRetry(roomId, async (room) => {
+    if (!room.game || room.game.players.length === 0) return { game: room.game };
+
+    const stalePlayers = room.game.players.filter(p => {
+      const lastSeen = p.lastSeenAt ?? 0;
+      return (now - lastSeen) > STALE_PLAYER_MS;
+    });
+
+    if (stalePlayers.length === 0) return { game: room.game };
+
+    for (const stale of stalePlayers) {
+      console.log(`[rooms] evicting stale player ${stale.name} (${stale.agentId}) from ${roomId} — last seen ${Math.round((now - (stale.lastSeenAt ?? 0)) / 1000)}s ago`);
+
+      const phase = room.game!.phase;
+      const isActiveHand = phase !== 'waiting' && phase !== 'showdown';
+
+      if (isActiveHand) {
+        safeMidHandRemove(room.game!, stale.agentId);
+        evicted.push(stale.agentId);
+      } else {
+        const removed = removePlayer(room.game!, stale.agentId);
+        if (removed) {
+          const totalReturn = removed.chips + removed.currentBet;
+          if (totalReturn > 0) {
+            await addChipsAtomic(stale.agentId, totalReturn);
+            room.game!.pot = Math.max(0, room.game!.pot - removed.currentBet);
+          }
+          evicted.push(stale.agentId);
+        }
+      }
+    }
+
+    if (room.game!.players.length === 0) return { game: null };
+    return { game: room.game };
+  });
+
+  return evicted;
 }
 
 // ─── Auto-scaling ──────────────────────────────────────────────────────────────
@@ -770,6 +845,9 @@ export async function listCategories(recommended = false): Promise<(Omit<StakeCa
 // ─── Client state ─────────────────────────────────────────────────────────────
 
 export async function getClientGameState(roomId: string, viewerAgentId: string): Promise<ClientGameState | null> {
+  // Evict stale players (piggyback on every poll)
+  await evictStalePlayers(roomId);
+
   const room = await loadRoom(roomId);
   if (!room || !room.game) return null;
 
@@ -892,16 +970,12 @@ export async function getValidActionsForRoom(roomId: string): Promise<ReturnType
 // ─── Heartbeat ────────────────────────────────────────────────────────────────
 
 export async function heartbeatPlayer(roomId: string, agentId: string): Promise<boolean> {
-  // Touch casino_room_state.updated_at to keep the room alive
-  const room = await loadRoom(roomId);
-  if (!room?.game) return false;
-  const hasPlayer = room.game.players.some((p: any) => p.agentId === agentId);
-  if (!hasPlayer) return false;
-  // Re-save current state to refresh updated_at — strip hole cards
-  const hbSnapshot: any = { ...room.game };
-  if (hbSnapshot.players) {
-    hbSnapshot.players = hbSnapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
-  }
-  await saveRoomState(roomId, hbSnapshot, room.stateVersion);
-  return true;
+  const result = await saveWithRetry(roomId, async (room) => {
+    if (!room.game) return { game: null, error: 'no game' };
+    const player = room.game.players.find(p => p.agentId === agentId);
+    if (!player) return { game: null, error: 'not seated' };
+    player.lastSeenAt = Date.now();
+    return { game: room.game };
+  });
+  return result.success;
 }

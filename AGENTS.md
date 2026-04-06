@@ -19,8 +19,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 | File | Purpose |
 |------|---------|
-| `src/lib/casino-db.ts` | All Supabase reads/writes. `STALE_MS = 15 min` for seat eviction. |
-| `src/lib/room-manager.ts` | In-memory room state, hydration gate, equity cache, in-memory chat. |
+| `src/lib/casino-db.ts` | All Supabase reads/writes. |
+| `src/lib/room-manager.ts` | Room state, `STALE_PLAYER_MS = 5 min` ghost eviction, equity cache, in-memory chat. |
 | `src/lib/auth.ts` | sk_/pk_ key issuance, Ed25519 verify, session cache + DB recovery, registration lock. |
 | `src/lib/web-auth.ts` | Browser sessionStorage identity (sk_ never in localStorage) + `?auth=pk_` URL handoff. |
 | `src/lib/equity.ts` | Monte Carlo win probability calculator (500 samples, cached per stateVersion). |

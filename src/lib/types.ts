@@ -53,6 +53,8 @@ export interface Player {
   hasActed: boolean;
   isAllIn: boolean;
   isConnected: boolean;
+  lastSeenAt: number;       // Unix ms — updated on every interaction
+  pendingLeave: boolean;    // true = remove at end of current hand
 }
 
 // ===== Game State =====
