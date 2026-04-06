@@ -450,7 +450,7 @@ export async function leaveRoom(roomId: string, agentId: string): Promise<{ succ
     const isActiveHand = phase !== 'waiting' && phase !== 'showdown';
 
     if (isActiveHand) {
-      // Mid-hand: fold + mark pendingLeave — chips returned at hand end
+      // Mid-hand: fold + mark pendingLeave — chips returned (minus penalty) at hand end
       player.isConnected = false;
       const outcome = safeMidHandRemove(room.game, agentId);
       if (outcome === 'removed') {
