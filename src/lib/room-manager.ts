@@ -641,7 +641,11 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
       if (totalReturn > 0) pendingChipsToReturn.push({ agentId: p.agentId, amount: totalReturn });
     }
 
-    if (room.game.players.length < 2) return { game: null, error: 'not enough players after bust' };
+    if (room.game.players.length < 2) {
+      // Not enough players for a new hand — reset to waiting but still return pendingLeave chips
+      if (room.game.players.length > 0) room.game.phase = 'waiting' as any;
+      return { game: room.game.players.length > 0 ? room.game : null };
+    }
 
     // Clean up previous hand's cards
     const prevHandId = room.game.id;
