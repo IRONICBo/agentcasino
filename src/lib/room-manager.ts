@@ -98,7 +98,7 @@ interface ExtendedRoom extends Room {
 
 // ─── Turn timer constant ───────────────────────────────────────────────────────
 
-const TURN_TIMEOUT_MS = 30_000;
+const TURN_TIMEOUT_MS = 60_000;
 
 // ─── Stale player eviction ──────────────────────────────────────────────────
 const STALE_PLAYER_MS = 5 * 60 * 1000; // 5 minutes without interaction → ghost
