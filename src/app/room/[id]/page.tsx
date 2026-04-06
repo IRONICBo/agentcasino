@@ -7,6 +7,7 @@ import { PokerTable } from '@/components/PokerTable';
 import { EmptyTable } from '@/components/EmptyTable';
 import { ChatBox } from '@/components/ChatBox';
 import { resolveIdentity, authHeaders } from '@/lib/web-auth';
+import { supabaseBrowser } from '@/lib/supabase-browser';
 
 function RoomPageInner() {
   const params = useParams();
@@ -40,28 +41,53 @@ function RoomPageInner() {
     });
   }, []);
 
-  // Game state polling via REST
+  // Fetch processed game state from API (hole cards + equity for spectators)
+  const fetchGameState = useCallback(async () => {
+    try {
+      const aid = spectating ? '__spectator__' : agentId;
+      const headers: HeadersInit = secretKey ? { 'Authorization': `Bearer ${secretKey}` } : {};
+      const res = await fetch(`/api/casino?action=game_state&room_id=${roomId}&agent_id=${aid}`, { headers });
+      const data = await res.json();
+      if (data.phase && Array.isArray(data.players) && Array.isArray(data.communityCards)) {
+        setGameState(data);
+      }
+      if (data.room_name) setRoomName(data.room_name);
+    } catch {}
+  }, [spectating, agentId, secretKey, roomId]);
+
+  // Supabase Realtime: subscribe to casino_room_state changes for this room.
+  // On any DB change → fetch processed state from API (with hole cards + equity).
+  // Replaces 1.2s polling for spectators; agents use slower fallback poll.
   useEffect(() => {
     if (!joined) return;
-    const poll = async () => {
-      try {
-        const aid = spectating ? '__spectator__' : agentId;
-        const headers: HeadersInit = secretKey ? { 'Authorization': `Bearer ${secretKey}` } : {};
-        const res = await fetch(`/api/casino?action=game_state&room_id=${roomId}&agent_id=${aid}`, { headers });
-        const data = await res.json();
-        // Only update game state when we have a full game structure with players/cards arrays.
-        // The API returns { phase: 'waiting', stateVersion: 0 } without players when no game is active —
-        // passing that partial object to PokerTable causes gameState.players.find() to throw.
-        if (data.phase && Array.isArray(data.players) && Array.isArray(data.communityCards)) {
-          setGameState(data);
-        }
-        if (data.room_name) setRoomName(data.room_name);
-      } catch {}
-    };
-    poll();
-    const interval = setInterval(poll, 1200);
-    return () => clearInterval(interval);
-  }, [joined, spectating, roomId, agentId, secretKey]);
+
+    // Initial fetch
+    fetchGameState();
+
+    if (spectating) {
+      // Spectators: Realtime subscription + slow fallback
+      const channel = supabaseBrowser
+        .channel(`room:${roomId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'casino_room_state', filter: `room_id=eq.${roomId}` },
+          () => { fetchGameState(); },
+        )
+        .subscribe();
+
+      // Slow fallback poll (every 10s) in case Realtime disconnects
+      const fallback = setInterval(fetchGameState, 10_000);
+
+      return () => {
+        supabaseBrowser.removeChannel(channel);
+        clearInterval(fallback);
+      };
+    } else {
+      // Agents: keep REST polling (need is_your_turn, valid_actions with auth)
+      const interval = setInterval(fetchGameState, 1200);
+      return () => clearInterval(interval);
+    }
+  }, [joined, spectating, roomId, fetchGameState]);
 
   // Chat history polling — REST fallback for Vercel (no persistent WebSocket)
   useEffect(() => {
