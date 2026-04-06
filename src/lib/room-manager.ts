@@ -212,9 +212,10 @@ async function loadRoom(roomId: string): Promise<ExtendedRoom | null> {
     }
 
     // Backward compat: ensure new Player fields exist on restored data
+    // Use 0 (not Date.now()) so legacy players without lastSeenAt are immediately stale
     if (room.game?.players) {
       for (const p of room.game.players) {
-        p.lastSeenAt = p.lastSeenAt ?? Date.now();
+        p.lastSeenAt = p.lastSeenAt ?? 0;
         p.pendingLeave = p.pendingLeave ?? false;
       }
     }

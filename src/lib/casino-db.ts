@@ -391,26 +391,8 @@ export async function saveRoomStateWithVersion(
   expectedVersion: number,
 ): Promise<{ success: boolean; newVersion: number }> {
   const newVersion = expectedVersion + 1;
-  const { data, error } = await supabase
-    .from('casino_room_state')
-    .upsert({
-      room_id:       roomId,
-      game_json:     game,
-      state_version: newVersion,
-    }, { onConflict: 'room_id' })
-    .eq('room_id', roomId)
-    // Only update if current version matches expected (optimistic lock for existing rows)
-    .select('state_version');
 
-  // For new rows (no existing state), upsert always succeeds.
-  // For existing rows, we need a different approach: use update with WHERE.
-  // Supabase upsert doesn't support conditional WHERE, so we'll try update first,
-  // then insert if no row exists.
-  if (error) {
-    console.error('[casino-db] saveRoomStateWithVersion upsert error:', error.message);
-  }
-
-  // Use a two-step approach: try UPDATE with version check, fall back to INSERT
+  // Try UPDATE with version check (optimistic lock)
   const { data: updated, error: updateErr } = await supabase
     .from('casino_room_state')
     .update({

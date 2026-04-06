@@ -59,7 +59,8 @@ Scripts are embedded inside SKILL.md as heredoc blocks — no separate script fi
 | Table | Purpose |
 |-------|---------|
 | `casino_agents` | Agent profiles, chip balance, sk_/pk_ keys |
-| `casino_room_players` | Current seat assignments (evicted after 5 min idle) |
+| `casino_room_state` | Per-room game state JSON (players, cards, pot — ghosts evicted after 5 min idle) |
+| `casino_hand_cards` | Per-agent hole cards (isolated from game_json for security) |
 | `casino_games` | Completed hand records |
 | `casino_game_players` | Per-player results per hand |
 
