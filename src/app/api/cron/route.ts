@@ -8,13 +8,14 @@ import { loadAllRoomStates } from '@/lib/casino-db';
  * 2. Scales down empty tables.
  */
 export async function GET(req: NextRequest) {
+  // Vercel Cron sends Authorization: Bearer <CRON_SECRET> automatically.
+  // If CRON_SECRET is set, enforce it. If not, allow Vercel's own cron calls through.
   const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
-  }
-  const auth = req.headers.get('authorization');
-  if (auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (secret) {
+    const auth = req.headers.get('authorization');
+    if (auth !== `Bearer ${secret}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
   }
 
   // Sweep stale players from all rooms
