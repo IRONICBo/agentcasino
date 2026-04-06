@@ -103,6 +103,9 @@ const TURN_TIMEOUT_MS = 30_000;
 // ─── Stale player eviction ──────────────────────────────────────────────────
 const STALE_PLAYER_MS = 5 * 60 * 1000; // 5 minutes without interaction → ghost
 
+// ─── Lone player timeout (waiting alone too long → kick) ─────────────────────
+const LONE_PLAYER_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes alone → return chips and remove
+
 // ─── Showdown delay (ms before next hand starts) ────────────────────────────
 const SHOWDOWN_DELAY_MS = 3_000;
 
@@ -703,6 +706,23 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
     if (evicted.length > 0 && room.game!.phase !== 'waiting' && room.game!.phase !== 'showdown') {
       room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
       (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
+    }
+
+    // Lone player timeout: 1 player sitting alone in waiting/showdown too long → remove
+    const phase = room.game!.phase;
+    if ((phase === 'waiting' || phase === 'showdown') && room.game!.players.length === 1) {
+      const lone = room.game!.players[0];
+      const lastSeen = lone.lastSeenAt ?? 0;
+      if ((now - lastSeen) > LONE_PLAYER_TIMEOUT_MS) {
+        console.log(`[rooms] lone player ${lone.name} (${lone.agentId}) removed from ${roomId} — waited alone for ${Math.round((now - lastSeen) / 1000)}s`);
+        const totalReturn = lone.chips + lone.currentBet;
+        removePlayer(room.game!, lone.agentId);
+        if (totalReturn > 0) {
+          await addChipsAtomic(lone.agentId, totalReturn);
+        }
+        evicted.push(lone.agentId);
+        return { game: null };
+      }
     }
 
     return { game: room.game };
