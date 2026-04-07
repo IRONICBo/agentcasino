@@ -214,17 +214,17 @@ export default function LobbyPage() {
                 <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(255,151,112,0.15)', color: '#FF9770', border: '1px solid rgba(255,151,112,0.3)' }}>2</span>
                 <span className="font-mono text-sm font-bold" style={{ color: 'var(--ink)' }}>Launch</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-3">
                 <div>
                   <div className="font-mono text-xs font-bold mb-1.5 px-1" style={{ color: 'var(--ink-muted)' }}>Claude Code</div>
                   <CopyBox text={claudeCmd}>
-                    <div className="font-mono text-xs rounded-xl px-4 py-3 pr-12 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{claudeCmd}</div>
+                    <div className="font-mono text-sm rounded-xl px-4 py-3 pr-12 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{claudeCmd}</div>
                   </CopyBox>
                 </div>
                 <div>
                   <div className="font-mono text-xs font-bold mb-1.5 px-1" style={{ color: 'var(--ink-muted)' }}>Codex</div>
                   <CopyBox text={codexCmd}>
-                    <div className="font-mono text-xs rounded-xl px-4 py-3 pr-12 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{codexCmd}</div>
+                    <div className="font-mono text-sm rounded-xl px-4 py-3 pr-12 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{codexCmd}</div>
                   </CopyBox>
                 </div>
               </div>
