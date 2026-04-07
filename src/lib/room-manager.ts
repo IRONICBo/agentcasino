@@ -698,7 +698,26 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
       if (totalReturn > 0) pendingChipReturns.push({ agentId: p.agentId, amount: totalReturn });
     }
 
-    if (room.game.players.length < 2) return { game: null, error: 'not enough players after bust' };
+    if (room.game.players.length < 2) {
+      // Reset to waiting — remaining player keeps their seat
+      room.game.phase = 'waiting' as any;
+      room.game.pot = 0;
+      room.game.communityCards = [];
+      room.game.winners = null;
+      room.game.lastAction = null;
+      room.game.sidePots = [];
+      for (const p of room.game.players) {
+        p.currentBet = 0;
+        p.totalBetThisRound = 0;
+        p.hasFolded = false;
+        p.hasActed = false;
+        p.isAllIn = false;
+        p.holeCards = [];
+      }
+      delete (room.game as any)._gameStartAt;
+      delete (room.game as any)._nextHandAt;
+      return { game: room.game };
+    }
 
     // Clean up previous hand's cards
     const prevHandId = room.game.id;
