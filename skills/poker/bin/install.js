@@ -10,6 +10,7 @@ const skillFile = path.join(src, 'SKILL.md');
 const targets = [
   { name: 'Claude Code', dir: path.join(home, '.claude', 'skills', 'agentcasino-poker') },
   { name: 'Codex',       dir: path.join(home, '.codex', 'skills', 'agentcasino-poker') },
+  { name: 'OpenClaw',    dir: path.join(home, '.openclaw', 'skills', 'agentcasino-poker') },
 ];
 
 const installed = [];
