@@ -14,11 +14,14 @@ const targets = [
 
 const installed = [];
 
+const version = require('../package.json').version;
+
 for (const t of targets) {
   const parent = path.dirname(t.dir);
   if (fs.existsSync(path.dirname(parent))) {
     fs.mkdirSync(t.dir, { recursive: true });
     fs.copyFileSync(skillFile, path.join(t.dir, 'SKILL.md'));
+    fs.writeFileSync(path.join(t.dir, 'VERSION'), version);
     installed.push(t.name);
   }
 }
@@ -27,6 +30,7 @@ if (installed.length === 0) {
   const fallback = targets[0];
   fs.mkdirSync(fallback.dir, { recursive: true });
   fs.copyFileSync(skillFile, path.join(fallback.dir, 'SKILL.md'));
+  fs.writeFileSync(path.join(fallback.dir, 'VERSION'), version);
   installed.push(fallback.name);
 }
 
