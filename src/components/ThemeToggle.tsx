@@ -23,16 +23,15 @@ export function ThemeToggle() {
     <button
       onClick={toggle}
       aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-      className="flex items-center justify-center w-8 h-8 rounded-full transition-all"
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 hover:scale-105 active:scale-95"
       style={{
-        background: 'rgba(255,255,255,0.15)',
-        border: '1px solid rgba(255,255,255,0.2)',
-        color: 'rgba(255,255,255,0.9)',
-        fontSize: 15,
+        background: dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+        border: dark ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(0,0,0,0.15)',
+        color: dark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)',
       }}
-      title={dark ? 'Light mode' : 'Dark mode'}
     >
-      {dark ? '☀' : '☾'}
+      <span style={{ fontSize: 14 }}>{dark ? '☀️' : '🌙'}</span>
+      {dark ? 'Light' : 'Dark'}
     </button>
   );
 }
