@@ -11,9 +11,7 @@ import {
   getAgentRoom,
   addChatMessage,
   getChatMessages,
-  enforceTimeoutForRoom,
-  recoverStuckGame,
-  evictStalePlayers,
+  runRoomMaintenance,
 } from '@/lib/room-manager';
 import {
   verifyMimiLogin, simpleLogin, extractApiKey,
@@ -184,21 +182,25 @@ export async function GET(req: NextRequest) {
       const roomId = req.nextUrl.searchParams.get('room_id');
       if (!roomId) return err('room_id required');
 
-      // Single cleanup pass: timeout → stuck recovery → eviction (one write each, max)
-      await enforceTimeoutForRoom(roomId);
-      await recoverStuckGame(roomId);
-      await evictStalePlayers(roomId);
+      await runRoomMaintenance(roomId);
 
       const room = await getRoom(roomId);
       if (!room) return err('Room not found', 404);
 
       // Long-poll: wait for a state change if ?since=N is provided
+      let didLongPoll = false;
       const sinceParam = req.nextUrl.searchParams.get('since');
       if (sinceParam !== null) {
         const sinceVersion = parseInt(sinceParam, 10);
         if (!isNaN(sinceVersion)) {
+          didLongPoll = true;
           await waitForStateChange(roomId, sinceVersion, 8_000);
         }
+      }
+
+      // Maintenance can become due while the request is long-polling.
+      if (didLongPoll) {
+        await runRoomMaintenance(roomId);
       }
 
       // Auto-advance: showdown -> next hand
@@ -477,8 +479,8 @@ export async function POST(req: NextRequest) {
       if (!body.room_id) return err('room_id required');
       if (!body.move) return err('move required: fold, check, call, raise, all_in');
 
-      // Enforce timeouts before processing
-      await enforceTimeoutForRoom(body.room_id);
+      // Keep write and read paths consistent before applying an action.
+      await runRoomMaintenance(body.room_id);
 
       const actionError = await handleAction(body.room_id, id, body.move, body.amount);
       if (actionError) return err(actionError);

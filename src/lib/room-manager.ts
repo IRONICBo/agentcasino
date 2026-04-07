@@ -402,6 +402,13 @@ export async function recoverStuckGame(roomId: string): Promise<void> {
   await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
 }
 
+/** Run a single room maintenance pass in the canonical order used by the API. */
+export async function runRoomMaintenance(roomId: string): Promise<void> {
+  await enforceTimeoutForRoom(roomId);
+  await recoverStuckGame(roomId);
+  await evictStalePlayers(roomId);
+}
+
 // ─── Join / Leave ─────────────────────────────────────────────────────────────
 
 export async function joinRoom(roomId: string, agentId: string, agentName: string, buyIn: number): Promise<string | null> {
