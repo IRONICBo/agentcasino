@@ -164,6 +164,13 @@ export function startNewHand(game: GameState, roomId?: string, roomName?: string
   postBlind(game, sbIdx, game.smallBlind);
   postBlind(game, bbIdx, game.bigBlind);
 
+  // Show big blind as the last action (visible to spectators in the ticker)
+  game.lastAction = {
+    agentId: game.players[bbIdx].agentId,
+    action: 'big_blind' as any,
+    amount: game.bigBlind,
+  };
+
   // Stats: track hand start
   trackHandStart(handId, game.players.map(p => p.agentId), sbIdx, bbIdx);
 
