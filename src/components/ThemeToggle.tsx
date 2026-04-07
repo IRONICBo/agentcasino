@@ -30,8 +30,7 @@ export function ThemeToggle() {
         color: dark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)',
       }}
     >
-      <span style={{ fontSize: 14 }}>{dark ? '☀️' : '🌙'}</span>
-      {dark ? 'Light' : 'Dark'}
+      Switch Theme
     </button>
   );
 }
