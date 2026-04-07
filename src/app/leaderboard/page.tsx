@@ -35,6 +35,8 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [watchApiKey, setWatchApiKey] = useState('');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 20;
 
   const fetchData = useCallback(async () => {
     try {
@@ -130,8 +132,8 @@ export default function LeaderboardPage() {
             </div>
           ) : (
             <>
-              {/* Desktop table */}
-              <div className="hidden lg:block" style={{ overflowX: 'auto' }}>
+              {/* Paginated table */}
+              <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${LIGHT.borderLight}` }}>
@@ -155,7 +157,7 @@ export default function LeaderboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {board.map((entry) => {
+                    {board.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((entry) => {
                       const isTop3 = entry.rank <= 3;
                       return (
                         <tr
@@ -201,32 +203,28 @@ export default function LeaderboardPage() {
                 </table>
               </div>
 
-              {/* Mobile cards */}
-              <div className="lg:hidden" style={{ display: 'flex', flexDirection: 'column' }}>
-                {board.map((entry, idx) => (
-                  <div key={entry.agent_id} style={{ padding: '1.25rem 1.5rem', borderBottom: idx < board.length - 1 ? `1px solid ${LIGHT.borderLight}` : undefined, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.875rem', color: LIGHT.inkMuted, width: '1.5rem' }}>
-                          {entry.rank <= 3 ? ['🥇', '🥈', '🥉'][entry.rank - 1] : `#${entry.rank}`}
-                        </span>
-                        <span style={{ fontWeight: 600, color: LIGHT.ink }}>{entry.name}</span>
-                      </div>
-                      <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, color: LIGHT.ink }}>{entry.chips.toLocaleString()}</span>
-                    </div>
-                    {entry.hands > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', paddingTop: '0.25rem' }}>
-                        {([['VPIP', pct(entry.vpip)], ['PFR', pct(entry.pfr)], ['AF', afFmt(entry.af)], ['Hands', String(entry.hands)]] as [string, string][]).map(([label, val]) => (
-                          <div key={label} style={{ textAlign: 'center' }}>
-                            <div style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '.55rem', color: LIGHT.inkMuted, letterSpacing: '.08em' }}>{label}</div>
-                            <div style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.75rem', marginTop: '0.125rem', color: LIGHT.inkLight }}>{val}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              {/* Pagination */}
+              {board.length > PAGE_SIZE && (
+                <div style={{ padding: '1rem 1.5rem', borderTop: `1px solid ${LIGHT.borderLight}`, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem' }}>
+                  <button
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '.75rem', padding: '0.4rem 1rem', border: `1px solid ${LIGHT.ink}`, background: 'transparent', color: page === 0 ? LIGHT.inkMuted : LIGHT.ink, cursor: page === 0 ? 'default' : 'pointer', opacity: page === 0 ? 0.4 : 1 }}
+                  >
+                    ← Prev
+                  </button>
+                  <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '.75rem', color: LIGHT.inkMuted }}>
+                    Page {page + 1} of {Math.ceil(board.length / PAGE_SIZE)}
+                  </span>
+                  <button
+                    onClick={() => setPage(p => Math.min(Math.ceil(board.length / PAGE_SIZE) - 1, p + 1))}
+                    disabled={(page + 1) * PAGE_SIZE >= board.length}
+                    style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '.75rem', padding: '0.4rem 1rem', border: `1px solid ${LIGHT.ink}`, background: 'transparent', color: (page + 1) * PAGE_SIZE >= board.length ? LIGHT.inkMuted : LIGHT.ink, cursor: (page + 1) * PAGE_SIZE >= board.length ? 'default' : 'pointer', opacity: (page + 1) * PAGE_SIZE >= board.length ? 0.4 : 1 }}
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
             </>
           )}
 
