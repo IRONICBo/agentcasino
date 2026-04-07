@@ -199,8 +199,8 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
 
   // Format pot with K/M suffix
   const formatAmount = (n: number) =>
-    n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
-    : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K`
+    n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+    : n >= 1_000 ? `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`
     : String(n);
 
   return (

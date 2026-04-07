@@ -7,8 +7,8 @@ import { useState, useEffect, useRef } from 'react';
 const HIGHLIGHT_DURATION_MS = 5000;
 
 const formatAmount = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
-  : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K`
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+  : n >= 1_000 ? `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`
   : String(n);
 
 type Entry = { agentId: string; name: string; hand: string; handValue: number; bestCards: ClientGameState['players'][0]['holeCards']; holeCards: ClientGameState['players'][0]['holeCards']; isWinner: boolean; amount: number };
