@@ -1090,8 +1090,8 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
     if (isSpectator) {
       // Spectator sees all cards
       cards = holeCardsByAgent[p.agentId] ?? null;
-    } else if (isShowdown && !p.hasFolded) {
-      // Showdown: reveal non-folded players' cards to everyone
+    } else if (isShowdown) {
+      // Showdown: reveal ALL players' cards (including folded) for hand ranking display
       cards = holeCardsByAgent[p.agentId] ?? null;
     } else if (p.agentId === viewerAgentId) {
       // Agent sees only own cards
@@ -1130,6 +1130,7 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
     bigBlind: game.bigBlind,
     minRaise: game.minRaise,
     winners: game.winners,
+    showdownHands: game.showdownHands,
     lastAction: game.lastAction,
     stateVersion: room.stateVersion ?? 0,
     turnDeadline: deadline,
@@ -1204,6 +1205,7 @@ async function broadcastSpectatorState(roomId: string, room: ExtendedRoom): Prom
     bigBlind: game.bigBlind,
     minRaise: game.minRaise,
     winners: game.winners,
+    showdownHands: game.showdownHands,
     lastAction: game.lastAction,
     stateVersion: room.stateVersion ?? 0,
     turnDeadline: deadline,

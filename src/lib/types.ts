@@ -61,6 +61,12 @@ export interface Player {
 
 export type GamePhase = 'waiting' | 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 
+export interface ShowdownHandInfo {
+  agentId: string;
+  name: string;
+  hand: HandResult;
+}
+
 export interface GameState {
   id: string;
   phase: GamePhase;
@@ -75,6 +81,8 @@ export interface GameState {
   minRaise: number;
   deck: Card[];
   winners: WinnerInfo[] | null;
+  /** Hand evaluations for ALL non-folded players at showdown */
+  showdownHands: ShowdownHandInfo[] | null;
   lastAction: { agentId: string; action: PlayerAction; amount?: number } | null;
 }
 
@@ -119,6 +127,8 @@ export interface ClientGameState {
   bigBlind: number;
   minRaise: number;
   winners: WinnerInfo[] | null;
+  /** Hand evaluations for ALL non-folded players at showdown */
+  showdownHands: ShowdownHandInfo[] | null;
   lastAction: { agentId: string; action: PlayerAction; amount?: number } | null;
   /** Monotonically-increasing version — use with ?since=N for efficient long-polling */
   stateVersion: number;

@@ -20,6 +20,7 @@ export function createGame(smallBlind: number, bigBlind: number): GameState {
     minRaise: bigBlind,
     deck: [],
     winners: null,
+    showdownHands: null,
     lastAction: null,
   };
 }
@@ -134,6 +135,7 @@ export function startNewHand(game: GameState, roomId?: string, roomName?: string
   game.pot = 0;
   game.sidePots = [];
   game.winners = null;
+  game.showdownHands = null;
   game.lastAction = null;
   game.phase = 'preflop';
 
@@ -416,6 +418,15 @@ function awardPotToLastPlayer(game: GameState, winner: Player): void {
   }];
   game.pot = 0;
 
+  // Evaluate hands for ALL players including folded (for showdown display)
+  game.showdownHands = game.communityCards.length >= 3
+    ? game.players.map(p => ({
+        agentId: p.agentId,
+        name: p.name,
+        hand: evaluateHand(p.holeCards, game.communityCards),
+      }))
+    : null;
+
   trackHandEnd(game.id, [winner.agentId], false);
 }
 
@@ -459,6 +470,13 @@ function resolveShowdown(game: GameState): void {
   game.winners = winners;
   game.pot = 0;
   game.sidePots = pots;
+
+  // Evaluate hands for ALL players including folded (for showdown display)
+  game.showdownHands = game.players.map(p => ({
+    agentId: p.agentId,
+    name: p.name,
+    hand: evaluateHand(p.holeCards, game.communityCards),
+  }));
 
   trackHandEnd(game.id, winners.map(w => w.agentId), true);
 }

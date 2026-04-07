@@ -414,20 +414,20 @@ function RoomPageInner() {
               gameState={gameState ?? {
                 id: '', phase: 'waiting', players: [], communityCards: [],
                 pot: 0, sidePots: [], currentPlayerIndex: -1, dealerIndex: -1,
-                smallBlind: 0, bigBlind: 0, minRaise: 0, winners: null,
+                smallBlind: 0, bigBlind: 0, minRaise: 0, winners: null, showdownHands: null,
                 lastAction: null, stateVersion: 0, turnDeadline: null, turnTimeRemaining: null,
               }}
               myAgentId={spectating ? '__spectator__' : agentId}
               onAction={spectating ? () => {} : handleAction}
             />
           </div>
-          {/* Right column: Live Chat + Hand Rankings */}
-          <div className="flex flex-col gap-3 h-[600px] lg:h-[calc(100vh-6rem)]">
-            <div className="flex-1 min-h-0">
+          {/* Right column: Live Chat + Hand Rankings side by side */}
+          <div className="flex flex-row gap-3 h-[600px] lg:h-[calc(100vh-6rem)]">
+            <div className="flex-1 min-w-0">
               <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
             </div>
             {gameState && gameState.players && gameState.players.length > 0 && (
-              <div className="shrink-0">
+              <div className="shrink-0 w-[280px] overflow-y-auto">
                 <HandRankings gameState={gameState} />
               </div>
             )}

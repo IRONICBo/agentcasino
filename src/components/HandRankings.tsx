@@ -1,6 +1,6 @@
 'use client';
 
-import { ClientGameState, WinnerInfo } from '@/lib/types';
+import { ClientGameState, WinnerInfo, ShowdownHandInfo } from '@/lib/types';
 import { PlayingCard } from './PlayingCard';
 import { useState, useEffect, useRef } from 'react';
 
@@ -11,68 +11,88 @@ const formatAmount = (n: number) =>
   : n >= 1_000 ? `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`
   : String(n);
 
-type Entry = { agentId: string; name: string; hand: string; handValue: number; bestCards: ClientGameState['players'][0]['holeCards']; holeCards: ClientGameState['players'][0]['holeCards']; isWinner: boolean; amount: number };
+type Entry = {
+  agentId: string;
+  name: string;
+  hand: string;
+  handValue: number;
+  bestCards: ClientGameState['players'][0]['holeCards'];
+  holeCards: ClientGameState['players'][0]['holeCards'];
+  isWinner: boolean;
+  hasFolded: boolean;
+  amount: number;
+};
 
-function buildShowdownEntries(winners: WinnerInfo[], players: ClientGameState['players']): Entry[] {
+function buildShowdownEntries(
+  winners: WinnerInfo[],
+  players: ClientGameState['players'],
+  showdownHands: ShowdownHandInfo[] | null,
+): Entry[] {
   const winnerIds = new Set(winners.map(w => w.agentId));
+  const winnerMap = new Map(winners.map(w => [w.agentId, w]));
+  const handMap = new Map((showdownHands ?? []).map(h => [h.agentId, h]));
   const entries: Entry[] = [];
 
-  for (const w of winners) {
-    const player = players.find(p => p.agentId === w.agentId);
-    entries.push({
-      agentId: w.agentId,
-      name: w.name,
-      hand: w.hand?.description || 'Last player standing',
-      handValue: w.hand?.value ?? 0,
-      bestCards: w.hand?.cards ?? null,
-      holeCards: player?.holeCards ?? null,
-      isWinner: true,
-      amount: w.amount,
-    });
-  }
-
   for (const p of players) {
-    if (winnerIds.has(p.agentId)) continue;
+    const w = winnerMap.get(p.agentId);
+    const sdHand = handMap.get(p.agentId);
+    const isWinner = winnerIds.has(p.agentId);
+
+    // Use winner hand info if available, otherwise use showdownHands
+    const handDesc = isWinner
+      ? (w!.hand?.description || 'Last player standing')
+      : p.hasFolded
+        ? (sdHand?.hand?.description ? `${sdHand.hand.description} (Folded)` : 'Folded')
+        : (sdHand?.hand?.description ?? '');
+
+    const handValue = isWinner
+      ? (w!.hand?.value ?? 0)
+      : (sdHand?.hand?.value ?? -1);
+
+    const bestCards = isWinner
+      ? (w!.hand?.cards ?? null)
+      : (sdHand?.hand?.cards ?? null);
+
     entries.push({
       agentId: p.agentId,
       name: p.name,
-      hand: p.hasFolded ? 'Folded' : '',
-      handValue: -1,
-      bestCards: null,
-      holeCards: (!p.hasFolded && p.holeCards && p.holeCards.length === 2) ? p.holeCards : null,
-      isWinner: false,
-      amount: 0,
+      hand: handDesc,
+      handValue,
+      bestCards,
+      holeCards: p.holeCards,
+      isWinner,
+      hasFolded: p.hasFolded,
+      amount: isWinner ? w!.amount : 0,
     });
   }
 
+  // Sort ALL players by hand value descending (winners first on tie)
   entries.sort((a, b) => {
+    if (b.handValue !== a.handValue) return b.handValue - a.handValue;
     if (a.isWinner !== b.isWinner) return a.isWinner ? -1 : 1;
-    return b.handValue - a.handValue;
+    return 0;
   });
 
   return entries;
 }
 
 export function HandRankings({ gameState }: { gameState: ClientGameState }) {
-  // Snapshot: stores the last showdown result (persists across hands)
   const [snapshot, setSnapshot] = useState<Entry[]>([]);
   const [isHighlighted, setIsHighlighted] = useState(false);
   const prevWinnersKeyRef = useRef('');
   const prevPhaseRef = useRef(gameState.phase);
 
-  // When new winners appear → snapshot + highlight 5s
   useEffect(() => {
     const key = gameState.winners?.map(w => `${w.agentId}:${w.amount}`).join(',') ?? '';
     if (key && key !== prevWinnersKeyRef.current) {
       prevWinnersKeyRef.current = key;
-      setSnapshot(buildShowdownEntries(gameState.winners!, gameState.players));
+      setSnapshot(buildShowdownEntries(gameState.winners!, gameState.players, gameState.showdownHands));
       setIsHighlighted(true);
       const timer = setTimeout(() => setIsHighlighted(false), HIGHLIGHT_DURATION_MS);
       return () => clearTimeout(timer);
     }
-  }, [gameState.winners, gameState.players]);
+  }, [gameState.winners, gameState.players, gameState.showdownHands]);
 
-  // When a new hand starts (phase leaves showdown) → immediately un-highlight
   useEffect(() => {
     if (prevPhaseRef.current === 'showdown' && gameState.phase !== 'showdown') {
       setIsHighlighted(false);
@@ -80,10 +100,7 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
     prevPhaseRef.current = gameState.phase;
   }, [gameState.phase]);
 
-  // Nothing to show yet
   if (snapshot.length === 0) return null;
-
-  const entries = snapshot;
 
   return (
     <div
@@ -119,19 +136,25 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
 
       {/* Entries */}
       <div className="px-3 py-2 space-y-1">
-        {entries.map((entry, i) => (
+        {snapshot.map((entry, i) => (
           <div
             key={entry.agentId}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-500"
             style={{
+              // Winner: gold border highlight; others: transparent
               background: entry.isWinner && isHighlighted ? 'rgba(212,175,55,0.08)' : 'transparent',
-              borderBottom: i < entries.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+              border: entry.isWinner && isHighlighted ? '1px solid rgba(212,175,55,0.5)' : '1px solid transparent',
+              borderBottom: !entry.isWinner && i < snapshot.length - 1 ? '1px solid rgba(255,255,255,0.04)' : undefined,
+              // Folded players: semi-transparent
+              opacity: entry.hasFolded ? 0.45 : 1,
             }}
           >
-            {/* Rank */}
+            {/* Rank number */}
             <div className="text-sm shrink-0" style={{ width: 20, textAlign: 'center' }}>
               {entry.isWinner && isHighlighted ? '👑' : (
-                <span className="font-mono text-xs text-gray-600">·</span>
+                <span className="font-mono text-xs" style={{ color: entry.hasFolded ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.4)' }}>
+                  {i + 1}
+                </span>
               )}
             </div>
 
@@ -163,19 +186,21 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
                 )}
               </div>
 
-              {/* Hand description */}
-              {(entry.isWinner && isHighlighted) || entry.hand === 'Folded' ? (
+              {/* Hand description — always show */}
+              {entry.hand ? (
                 <div
                   className="text-xs font-mono font-bold tracking-wide mt-0.5"
                   style={{
-                    color: entry.isWinner && isHighlighted ? '#d4af37' : 'rgba(255,255,255,0.2)',
+                    color: entry.isWinner && isHighlighted ? '#d4af37'
+                      : entry.hasFolded ? 'rgba(255,255,255,0.3)'
+                      : 'rgba(255,255,255,0.4)',
                   }}
                 >
-                  {entry.hand ? entry.hand.toUpperCase() : 'MUCKED'}
+                  {entry.hand.toUpperCase()}
                 </div>
               ) : null}
 
-              {/* Best 5 cards (if available, only during highlight) */}
+              {/* Best 5 cards — show for ALL players during highlight */}
               {isHighlighted && entry.bestCards && entry.bestCards.length > 0 && (
                 <div className="flex gap-0.5 mt-1.5">
                   {entry.bestCards.map((card, ci) => (
