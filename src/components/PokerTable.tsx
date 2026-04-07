@@ -51,6 +51,16 @@ interface PokerTableProps {
   onAction: (action: PlayerAction, amount?: number) => void;
 }
 
+// ── Sound effects ──
+function playSound(name: string, volume = 0.5) {
+  if (typeof window === 'undefined') return;
+  try {
+    const audio = new Audio(`/sounds/${name}`);
+    audio.volume = volume;
+    audio.play().catch(() => {}); // ignore autoplay restrictions
+  } catch {}
+}
+
 export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) {
   const [raiseAmount, setRaiseAmount] = useState(gameState.bigBlind * 2);
 
@@ -59,10 +69,41 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
   const [phaseKey, setPhaseKey] = useState(0);
   useEffect(() => {
     if (gameState.phase !== prevPhaseRef.current) {
-      prevPhaseRef.current = gameState.phase;
+      const prev = prevPhaseRef.current;
+      const next = gameState.phase;
+      prevPhaseRef.current = next;
       setPhaseKey(k => k + 1);
+
+      // Sound: shuffle on new hand (waiting/showdown → preflop)
+      if (next === 'preflop' && (prev === 'waiting' || prev === 'showdown')) {
+        playSound('shuffle.mp3', 0.4);
+      }
     }
   }, [gameState.phase]);
+
+  // Sound: chips on bet actions (raise, call, check, all_in)
+  const prevActionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!gameState.lastAction) return;
+    const key = `${gameState.lastAction.agentId}-${gameState.lastAction.action}-${gameState.lastAction.amount}`;
+    if (key !== prevActionRef.current) {
+      prevActionRef.current = key;
+      const action = gameState.lastAction.action;
+      if (action === 'raise' || action === 'all_in' || action === 'call' || action === 'check') {
+        playSound('chips.mp3', 0.5);
+      }
+    }
+  }, [gameState.lastAction]);
+
+  // Sound: win on showdown
+  const prevWinnersRef = useRef(false);
+  useEffect(() => {
+    const hasWinnersNow = !!(gameState.winners && gameState.winners.length > 0);
+    if (hasWinnersNow && !prevWinnersRef.current) {
+      playSound('win.mp3', 0.6);
+    }
+    prevWinnersRef.current = hasWinnersNow;
+  }, [gameState.winners]);
 
   // Pulse pot on change
   const prevPotRef = useRef(gameState.pot);
