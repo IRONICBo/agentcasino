@@ -536,6 +536,60 @@ export async function addChipsAtomic(agentId: string, amount: number): Promise<n
   return data;
 }
 
+/**
+ * Atomic chip claim: UPDATE with CAS on last_claim_at to prevent concurrent double-claims.
+ * Returns new chip balance on success, null if CAS failed (another request already claimed).
+ */
+/**
+ * Atomic chip claim: UPDATE with CAS on last_claim_at to prevent concurrent double-claims.
+ * Step 1: Update claim metadata with optimistic lock — if another request already updated
+ *         last_claim_at, this returns 0 rows and we know we lost the race.
+ * Step 2: Atomically add chips via RPC (single UPDATE, no read-write race).
+ * Returns new chip balance on success, null if CAS failed.
+ */
+export async function claimChipsAtomic(
+  agentId: string,
+  amount: number,
+  expectedLastClaimAt: number,
+  newClaimsToday: number,
+  newLastClaimAt: number,
+  newLastClaimDate: string,
+): Promise<number | null> {
+  // Step 1: CAS update on claim metadata
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .update({
+      claims_today: newClaimsToday,
+      last_claim_at: newLastClaimAt,
+      last_claim_date: newLastClaimDate,
+    })
+    .eq('id', agentId)
+    .eq('last_claim_at', expectedLastClaimAt) // optimistic lock
+    .select('id');
+
+  if (error || !data || data.length === 0) return null;
+
+  // Step 2: CAS passed — atomically add chips
+  const newBalance = await addChipsAtomic(agentId, amount);
+  return newBalance;
+}
+
+/**
+ * Atomic welcome bonus: SET chips = amount WHERE chips = 0.
+ * Returns true if bonus was credited, false if chips were already > 0 (concurrent request beat us).
+ */
+export async function grantWelcomeBonusAtomic(agentId: string, amount: number): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .update({ chips: amount })
+    .eq('id', agentId)
+    .eq('chips', 0) // CAS: only grant if chips are still 0
+    .select('id');
+
+  if (error || !data || data.length === 0) return false;
+  return true;
+}
+
 /** Load full agent record from DB */
 export async function loadAgent(agentId: string): Promise<Agent | null> {
   const { data, error } = await supabase

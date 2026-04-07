@@ -17,7 +17,8 @@
 
 import { createPublicKey, verify as cryptoVerify } from 'crypto';
 import { Agent } from './types';
-import { getOrCreateAgent, getAgent, addChips } from './chips';
+import { getOrCreateAgent, getAgent } from './chips';
+import { grantWelcomeBonusAtomic } from './casino-db';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -311,8 +312,12 @@ export async function verifyMimiLogin(payload: MimiLoginPayload): Promise<LoginR
 
   let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
   if (agent.chips === 0 && agent.createdAt >= now - 5000) {
-    await addChips(agent.id, 500_000); // persists to DB before response
-    welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
+    // Atomic CAS: only grant if chips still 0 (prevents concurrent double-grant)
+    const granted = await grantWelcomeBonusAtomic(agent.id, 500_000);
+    if (granted) {
+      welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
+      agent.chips = 500_000;
+    }
   }
 
   return {
@@ -367,8 +372,12 @@ export async function simpleLogin(agentId: string, name?: string): Promise<Login
     const now = Date.now();
     let welcomeBonus = { bonusCredited: false, bonusAmount: 0 };
     if (agent.chips === 0 && agent.createdAt >= now - 5000) {
-      await addChips(agent.id, 500_000); // persists to DB before response
-      welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
+      // Atomic CAS: only grant if chips still 0 (prevents concurrent double-grant)
+      const granted = await grantWelcomeBonusAtomic(agent.id, 500_000);
+      if (granted) {
+        welcomeBonus = { bonusCredited: true, bonusAmount: 500_000 };
+        agent.chips = 500_000;
+      }
     }
 
     return {

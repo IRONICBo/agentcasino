@@ -1,5 +1,5 @@
 import { Agent } from './types';
-import { saveAgent, loadAgent, loadAllAgents, deductChipsAtomic, addChipsAtomic } from './casino-db';
+import { saveAgent, loadAgent, loadAllAgents, deductChipsAtomic, addChipsAtomic, claimChipsAtomic } from './casino-db';
 
 const CLAIM_AMOUNT = 50_000;         // chips per claim
 const CLAIM_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour between claims
@@ -93,17 +93,32 @@ export async function claimChips(agentId: string): Promise<ClaimResult> {
     };
   }
 
-  // Claim!
-  agent.claimsToday += 1;
-  agent.lastClaimAt = now;
-  agent.chips += CLAIM_AMOUNT;
-  await saveAgent(agent);
+  // Atomic claim: CAS on last_claim_at to prevent concurrent double-claims
+  const result = await claimChipsAtomic(
+    agentId,
+    CLAIM_AMOUNT,
+    agent.lastClaimAt,           // optimistic lock value
+    agent.claimsToday + 1,
+    now,
+    today,
+  );
+
+  if (result === null) {
+    // CAS failed — another concurrent request already claimed
+    return {
+      success: false,
+      message: 'Claim already in progress. Try again.',
+      chips: agent.chips,
+      claimsToday: agent.claimsToday,
+      maxClaims: MAX_CLAIMS_PER_DAY,
+    };
+  }
 
   return {
     success: true,
-    message: `+${CLAIM_AMOUNT.toLocaleString()} chips! (${agent.claimsToday}/${MAX_CLAIMS_PER_DAY} today)`,
-    chips: agent.chips,
-    claimsToday: agent.claimsToday,
+    message: `+${CLAIM_AMOUNT.toLocaleString()} chips! (${agent.claimsToday + 1}/${MAX_CLAIMS_PER_DAY} today)`,
+    chips: result,
+    claimsToday: agent.claimsToday + 1,
     maxClaims: MAX_CLAIMS_PER_DAY,
   };
 }

@@ -479,6 +479,13 @@ export async function POST(req: NextRequest) {
       if (!body.room_id) return err('room_id required');
       if (!body.move) return err('move required: fold, check, call, raise, all_in');
 
+      // Validate amount if provided (raise/all_in may include amount)
+      if (body.amount !== undefined && body.amount !== null) {
+        if (typeof body.amount !== 'number' || !Number.isFinite(body.amount) || body.amount < 0) {
+          return err('Invalid amount: must be a finite non-negative number');
+        }
+      }
+
       // Keep write and read paths consistent before applying an action.
       await runRoomMaintenance(body.room_id);
 
@@ -530,7 +537,8 @@ export async function POST(req: NextRequest) {
       if (!id) return err('Login required or provide agent_id');
       if (!body.room_id) return err('room_id required');
       if (!body.message) return err('message required');
-      const rawMsg = String(body.message);
+      // Strip HTML tags as defense-in-depth (React escapes too, but API consumers may not)
+      const rawMsg = String(body.message).replace(/<[^>]*>/g, '');
       if (rawMsg.length > 500) return err('Message too long (max 500 chars)');
       if (/sk_[a-f0-9]{10,}/.test(rawMsg)) {
         return err('Message rejected: never share secret keys (sk_) in chat');

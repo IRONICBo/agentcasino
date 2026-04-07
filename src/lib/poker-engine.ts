@@ -450,17 +450,21 @@ function resolveShowdown(game: GameState): void {
     const bestValue = hands[0].hand.value;
     const potWinners = hands.filter(h => h.hand.value === bestValue);
     const share = Math.floor(pot.amount / potWinners.length);
+    const remainder = pot.amount - share * potWinners.length;
 
-    for (const w of potWinners) {
-      w.player.chips += share;
+    for (let wi = 0; wi < potWinners.length; wi++) {
+      const w = potWinners[wi];
+      // First winner gets the remainder (standard poker rule: leftmost of dealer)
+      const amount = share + (wi === 0 ? remainder : 0);
+      w.player.chips += amount;
       const existing = winners.find(x => x.agentId === w.player.agentId);
       if (existing) {
-        existing.amount += share;
+        existing.amount += amount;
       } else {
         winners.push({
           agentId: w.player.agentId,
           name: w.player.name,
-          amount: share,
+          amount,
           hand: w.hand,
         });
       }

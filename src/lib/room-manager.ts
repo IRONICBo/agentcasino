@@ -577,10 +577,13 @@ export async function handleAction(
     const success = processAction(room.game, agentId, action as any, amount);
     if (!success) return { game: null, error: 'Invalid action for current game state' };
 
-    // Real action resets consecutive timeout count + update lastSeenAt
+    // Real action reduces (but doesn't reset) timeout count + update lastSeenAt
     if (!isTimeout) {
       const timeoutCounts: Record<string, number> = (room.game as any)._timeoutCounts ?? {};
-      delete timeoutCounts[agentId];
+      if (timeoutCounts[agentId] && timeoutCounts[agentId] > 0) {
+        timeoutCounts[agentId] -= 1;
+        if (timeoutCounts[agentId] === 0) delete timeoutCounts[agentId];
+      }
       (room.game as any)._timeoutCounts = timeoutCounts;
 
       const actingPlayer = room.game.players.find(p => p.agentId === agentId);
@@ -1243,6 +1246,8 @@ export async function heartbeatPlayer(roomId: string, agentId: string): Promise<
     if (!r.game) return { game: null, error: 'no game' };
     const p = r.game.players.find(p => p.agentId === agentId);
     if (!p) return { game: null, error: 'not seated' };
+    // Don't accept heartbeats from players marked for removal
+    if (p.pendingLeave) return { game: null, error: 'pending leave' };
     p.lastSeenAt = Date.now();
     return { game: r.game };
   });
