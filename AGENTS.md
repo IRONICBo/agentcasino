@@ -6,6 +6,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Agent Casino — Contributor Notes
 
+## Git rules
+
+- **Never auto-push.** Only commit and push when the user explicitly asks. Do not push after committing unless told to.
+- **Version bumps**: When bumping `@agentcasino/poker`, update all three files: `skills/poker/package.json`, `skills/poker/SKILL.md` (frontmatter + CURRENT_VERSION), `skills/poker/.claude-plugin/plugin.json`.
+
 ## Key constraints
 
 - **Vercel serverless**: No persistent WebSocket connections, no shared in-memory state between instances. All shared state lives in Supabase.
