@@ -282,20 +282,27 @@ async function saveWithRetry(
  * Check if the current player's turn has expired. If so, auto-fold.
  * Returns true if a timeout was enforced.
  */
-async function enforceTimeout(room: ExtendedRoom): Promise<boolean> {
-  if (!room.game || room.game.phase === 'waiting' || room.game.phase === 'showdown') return false;
+interface TimeoutResult {
+  changed: boolean;
+  pendingChipReturn?: { agentId: string; amount: number };
+}
+
+function enforceTimeout(room: ExtendedRoom): TimeoutResult {
+  if (!room.game || room.game.phase === 'waiting' || room.game.phase === 'showdown') return { changed: false };
 
   const gameAny = room.game as any;
   const deadline = gameAny._turnDeadlineMs ?? room.turnDeadlineMs;
-  if (!deadline || Date.now() < deadline) return false;
+  if (!deadline || Date.now() < deadline) return { changed: false };
 
   const currentPlayer = room.game.players[room.game.currentPlayerIndex];
-  if (!currentPlayer) return false;
+  if (!currentPlayer) return { changed: false };
 
   // Track consecutive timeouts
   const timeoutCounts: Record<string, number> = gameAny._timeoutCounts ?? {};
   const key = currentPlayer.agentId;
   timeoutCounts[key] = (timeoutCounts[key] ?? 0) + 1;
+
+  let pendingChipReturn: { agentId: string; amount: number } | undefined;
 
   if (timeoutCounts[key] >= 3) {
     // Kick after 3 consecutive timeouts — fold + mark pendingLeave
@@ -304,11 +311,10 @@ async function enforceTimeout(room: ExtendedRoom): Promise<boolean> {
 
     const outcome = safeMidHandRemove(room.game, currentPlayer.agentId);
     if (outcome === 'removed') {
-      // Between hands — immediate removal
       const totalReturn = currentPlayer.chips + currentPlayer.currentBet;
       if (totalReturn > 0) {
-        await addChipsAtomic(currentPlayer.agentId, totalReturn);
         room.game.pot = Math.max(0, room.game.pot - currentPlayer.currentBet);
+        pendingChipReturn = { agentId: currentPlayer.agentId, amount: totalReturn };
       }
     }
     // 'folded_pending' or 'pending' → removed in tryStartNextHand
@@ -330,21 +336,19 @@ async function enforceTimeout(room: ExtendedRoom): Promise<boolean> {
     room.turnDeadlineMs = null;
   }
 
-  return true;
+  return { changed: true, pendingChipReturn };
 }
 
 /**
  * Public enforceTimeout: loads room from DB, enforces, saves.
- * Called from route.ts before returning game_state or processing play.
+ * Chip returns are deferred until after successful save.
  */
 export async function enforceTimeoutForRoom(roomId: string): Promise<void> {
   const room = await loadRoom(roomId);
   if (!room || !room.game) return;
 
-  let changed = await enforceTimeout(room);
-  // Might need multiple consecutive timeouts if multiple players timed out
-  while (changed) {
-    // Save intermediate state — strip hole cards
+  let result = enforceTimeout(room);
+  while (result.changed) {
     const snapshot: any = { ...room.game };
     if (snapshot.players) {
       snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
@@ -353,8 +357,12 @@ export async function enforceTimeoutForRoom(roomId: string): Promise<void> {
     const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
     if (saveResult.success) {
       room.stateVersion = saveResult.newVersion;
+      // Apply chip return only after successful save
+      if (result.pendingChipReturn) {
+        await addChipsAtomic(result.pendingChipReturn.agentId, result.pendingChipReturn.amount);
+      }
     }
-    changed = await enforceTimeout(room);
+    result = enforceTimeout(room);
   }
 }
 
@@ -661,7 +669,9 @@ export async function tryStartGame(roomId: string): Promise<boolean> {
 }
 
 export async function tryStartNextHand(roomId: string): Promise<boolean> {
+  const pendingChipReturns: { agentId: string; amount: number }[] = [];
   const result = await saveWithRetry(roomId, async (room) => {
+    pendingChipReturns.length = 0; // reset on retry
     if (!room.game) return { game: null, error: 'no game' };
     if (room.game.phase !== 'showdown') return { game: null, error: 'not showdown' };
     if (room.game.players.length < 2) return { game: null, error: 'not enough players' };
@@ -672,11 +682,6 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
       return { game: null, error: 'showdown delay not elapsed' };
     }
 
-    // Persist chip counts after each completed hand
-    for (const p of room.game.players) {
-      // Player chips persisted in game_json
-    }
-
     // Remove busted players
     const bustedPlayers = room.game.players.filter(p => p.chips <= 0);
     for (const p of bustedPlayers) {
@@ -684,13 +689,13 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
       removePlayer(room.game, p.agentId);
     }
 
-    // Flush players who left mid-hand (pendingLeave)
+    // Flush players who left mid-hand (pendingLeave) — defer chip return until save succeeds
     const pendingLeavePlayers = room.game.players.filter(p => p.pendingLeave);
     for (const p of pendingLeavePlayers) {
       console.log(`[rooms] pending-leave player ${p.name} (${p.agentId}) removed from ${roomId}`);
-      const totalReturn = p.chips; // currentBet is 0 after showdown reset
+      const totalReturn = p.chips;
       removePlayer(room.game, p.agentId);
-      if (totalReturn > 0) await addChipsAtomic(p.agentId, totalReturn);
+      if (totalReturn > 0) pendingChipReturns.push({ agentId: p.agentId, amount: totalReturn });
     }
 
     if (room.game.players.length < 2) return { game: null, error: 'not enough players after bust' };
@@ -713,6 +718,12 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
     return { game: room.game };
   });
 
+  // Apply deferred chip returns only after save succeeds
+  if (result.success) {
+    for (const { agentId, amount } of pendingChipReturns) {
+      await addChipsAtomic(agentId, amount);
+    }
+  }
   return result.success;
 }
 
@@ -720,9 +731,12 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
 
 export async function evictStalePlayers(roomId: string): Promise<string[]> {
   const evicted: string[] = [];
+  const chipsToReturn: { agentId: string; amount: number }[] = [];
   const now = Date.now();
 
-  await saveWithRetry(roomId, async (room) => {
+  const saveResult = await saveWithRetry(roomId, async (room) => {
+    evicted.length = 0; // reset on retry
+    chipsToReturn.length = 0;
     if (!room.game || room.game.players.length === 0) return { game: room.game };
 
     const stalePlayers = room.game.players.filter(p => {
@@ -730,43 +744,39 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
       return (now - lastSeen) > STALE_PLAYER_MS;
     });
 
-    if (stalePlayers.length === 0) return { game: room.game };
+    if (stalePlayers.length === 0) {
+      // No stale players — still check lone player timeout below
+    } else {
+      for (const stale of stalePlayers) {
+        console.log(`[rooms] evicting stale player ${stale.name} (${stale.agentId}) from ${roomId} — last seen ${Math.round((now - (stale.lastSeenAt ?? 0)) / 1000)}s ago`);
 
-    for (const stale of stalePlayers) {
-      console.log(`[rooms] evicting stale player ${stale.name} (${stale.agentId}) from ${roomId} — last seen ${Math.round((now - (stale.lastSeenAt ?? 0)) / 1000)}s ago`);
+        const phase = room.game!.phase;
+        const isActiveHand = phase !== 'waiting' && phase !== 'showdown';
 
-      const phase = room.game!.phase;
-      const isActiveHand = phase !== 'waiting' && phase !== 'showdown';
-
-      if (isActiveHand) {
-        safeMidHandRemove(room.game!, stale.agentId);
-        evicted.push(stale.agentId);
-      } else {
-        const removed = removePlayer(room.game!, stale.agentId);
-        if (removed) {
-          const totalReturn = removed.chips + removed.currentBet;
-          if (totalReturn > 0) {
-            await addChipsAtomic(stale.agentId, totalReturn);
-            room.game!.pot = Math.max(0, room.game!.pot - removed.currentBet);
-          }
+        if (isActiveHand) {
+          safeMidHandRemove(room.game!, stale.agentId);
           evicted.push(stale.agentId);
+        } else {
+          const removed = removePlayer(room.game!, stale.agentId);
+          if (removed) {
+            const totalReturn = removed.chips + removed.currentBet;
+            if (totalReturn > 0) {
+              chipsToReturn.push({ agentId: stale.agentId, amount: totalReturn });
+              room.game!.pot = Math.max(0, room.game!.pot - removed.currentBet);
+            }
+            evicted.push(stale.agentId);
+          }
         }
       }
     }
 
-    // If all players removed (or only pendingLeave left), flush remaining chips
-    // before deleting the room — tryStartNextHand will never run on an empty room
-    if (room.game!.players.length === 0) {
-      return { game: null };
-    }
+    if (room.game!.players.length === 0) return { game: null };
 
     const allPending = room.game!.players.every(p => p.pendingLeave);
     if (allPending) {
       for (const p of [...room.game!.players]) {
         const totalReturn = p.chips + p.currentBet;
-        if (totalReturn > 0) {
-          await addChipsAtomic(p.agentId, totalReturn);
-        }
+        if (totalReturn > 0) chipsToReturn.push({ agentId: p.agentId, amount: totalReturn });
         removePlayer(room.game!, p.agentId);
       }
       return { game: null };
@@ -787,9 +797,7 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
         console.log(`[rooms] lone player ${lone.name} (${lone.agentId}) removed from ${roomId} — waited alone for ${Math.round((now - lastSeen) / 1000)}s`);
         const totalReturn = lone.chips + lone.currentBet;
         removePlayer(room.game!, lone.agentId);
-        if (totalReturn > 0) {
-          await addChipsAtomic(lone.agentId, totalReturn);
-        }
+        if (totalReturn > 0) chipsToReturn.push({ agentId: lone.agentId, amount: totalReturn });
         evicted.push(lone.agentId);
         return { game: null };
       }
@@ -798,6 +806,12 @@ export async function evictStalePlayers(roomId: string): Promise<string[]> {
     return { game: room.game };
   });
 
+  // Apply deferred chip returns only after save succeeds
+  if (saveResult.success) {
+    for (const { agentId, amount } of chipsToReturn) {
+      await addChipsAtomic(agentId, amount);
+    }
+  }
   return evicted;
 }
 
