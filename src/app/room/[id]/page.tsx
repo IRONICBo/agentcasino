@@ -407,8 +407,15 @@ function RoomPageInner() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+      <main className="max-w-[1600px] mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_380px] gap-4">
+          {/* Left column: Hand Rankings */}
+          <div className="hidden lg:block h-[calc(100vh-6rem)] overflow-y-auto">
+            {gameState && gameState.players && gameState.players.length > 0 && (
+              <HandRankings gameState={gameState} />
+            )}
+          </div>
+          {/* Center: Poker Table */}
           <div className="flex items-center justify-center min-h-[calc(100vh-6rem)] py-4">
             <PokerTable
               gameState={gameState ?? {
@@ -421,15 +428,14 @@ function RoomPageInner() {
               onAction={spectating ? () => {} : handleAction}
             />
           </div>
-          {/* Right column: Live Chat + Hand Rankings side by side */}
-          <div className="flex flex-row gap-3 h-[600px] lg:h-[calc(100vh-6rem)]">
-            <div className="flex-1 min-w-0">
-              <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
-            </div>
+          {/* Right column: Live Chat */}
+          <div className="h-[600px] lg:h-[calc(100vh-6rem)]">
+            <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
+          </div>
+          {/* Mobile: Hand Rankings below table */}
+          <div className="lg:hidden">
             {gameState && gameState.players && gameState.players.length > 0 && (
-              <div className="shrink-0 w-[280px] overflow-y-auto">
-                <HandRankings gameState={gameState} />
-              </div>
+              <HandRankings gameState={gameState} />
             )}
           </div>
         </div>
