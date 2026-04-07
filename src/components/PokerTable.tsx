@@ -1,6 +1,6 @@
 'use client';
 
-import { ClientGameState, PlayerAction } from '@/lib/types';
+import { ClientGameState, PlayerAction, WinnerInfo } from '@/lib/types';
 import { PlayerSeat } from './PlayerSeat';
 import { PlayingCard } from './PlayingCard';
 import { useState, useRef, useEffect } from 'react';
@@ -42,6 +42,71 @@ function ConfettiPiece({ i }: { i: number }) {
       animation: `confetti-fall-${(i % 8) + 1} ${0.8 + (i % 4) * 0.15}s ease-out ${i * 60}ms both`,
       boxShadow: `0 0 4px ${colors[i % colors.length]}66`,
     }} />
+  );
+}
+
+function WinnerBanner({ gameState, formatAmount }: { gameState: ClientGameState; formatAmount: (n: number) => string }) {
+  const [highlighted, setHighlighted] = useState<WinnerInfo[]>([]);
+  const prevKeyRef = useRef('');
+
+  useEffect(() => {
+    const key = gameState.winners?.map(w => `${w.agentId}:${w.amount}`).join(',') ?? '';
+    if (key && key !== prevKeyRef.current) {
+      prevKeyRef.current = key;
+      setHighlighted(gameState.winners!);
+      const timer = setTimeout(() => setHighlighted([]), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.winners]);
+
+  const isActive = highlighted.length > 0;
+  if (gameState.players.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        position: 'absolute', top: '-8%', left: '50%', transform: 'translateX(-50%)',
+        zIndex: 30, display: 'flex', alignItems: 'center', gap: 12,
+        background: 'linear-gradient(135deg, rgba(20,18,12,0.95) 0%, rgba(15,13,8,0.95) 100%)',
+        border: isActive ? '1px solid rgba(212,175,55,0.5)' : '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 12, padding: '8px 20px',
+        boxShadow: isActive
+          ? '0 4px 24px rgba(0,0,0,0.6), 0 0 20px rgba(212,175,55,0.1)'
+          : '0 4px 24px rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(8px)',
+        opacity: isActive ? 1 : 0.4,
+        transition: 'opacity 0.5s, border-color 0.5s, box-shadow 0.5s',
+      }}
+    >
+      {isActive && (
+        <div style={{ position: 'absolute', top: '50%', left: '50%', pointerEvents: 'none' }}>
+          {Array.from({ length: 16 }).map((_, i) => <ConfettiPiece key={i} i={i} />)}
+        </div>
+      )}
+
+      {isActive ? highlighted.map((w, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative', zIndex: 1 }}>
+          {i > 0 && <div style={{ width: 1, height: 24, background: 'rgba(212,175,55,0.3)' }} />}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#f0f0f0', fontFamily: 'monospace' }}>
+              {w.name}
+            </div>
+            <div
+              className="text-gold-shine"
+              style={{ fontSize: 18, fontWeight: 900, fontFamily: 'monospace', letterSpacing: '-0.02em' }}
+            >
+              +{formatAmount(w.amount)}
+            </div>
+          </div>
+        </div>
+      )) : (
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', letterSpacing: '0.1em' }}>
+            LAST WINNER
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -305,43 +370,8 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
         );
       })}
 
-      {/* ── Winner banner (top, non-blocking) ── */}
-      {hasWinners && (
-        <div
-          className="animate-winner-pop"
-          style={{
-            position: 'absolute', top: '-8%', left: '50%', transform: 'translateX(-50%)',
-            zIndex: 30, display: 'flex', alignItems: 'center', gap: 12,
-            background: 'linear-gradient(135deg, rgba(20,18,12,0.95) 0%, rgba(15,13,8,0.95) 100%)',
-            border: '1px solid rgba(212,175,55,0.5)',
-            borderRadius: 12, padding: '8px 20px',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.6), 0 0 20px rgba(212,175,55,0.1)',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
-          {/* Confetti */}
-          <div style={{ position: 'absolute', top: '50%', left: '50%', pointerEvents: 'none' }}>
-            {Array.from({ length: 16 }).map((_, i) => <ConfettiPiece key={i} i={i} />)}
-          </div>
-
-          {gameState.winners!.map((w, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative', zIndex: 1 }}>
-              {i > 0 && <div style={{ width: 1, height: 24, background: 'rgba(212,175,55,0.3)' }} />}
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#f0f0f0', fontFamily: 'monospace' }}>
-                  {w.name}
-                </div>
-                <div
-                  className="text-gold-shine"
-                  style={{ fontSize: 18, fontWeight: 900, fontFamily: 'monospace', letterSpacing: '-0.02em' }}
-                >
-                  +{formatAmount(w.amount)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* ── Winner banner (top, always visible, highlights on win for 5s) ── */}
+      <WinnerBanner gameState={gameState} formatAmount={formatAmount} />
 
 
 

@@ -426,7 +426,7 @@ function RoomPageInner() {
             <div className="flex-1 min-h-0">
               <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
             </div>
-            {gameState && gameState.winners && gameState.winners.length > 0 && gameState.phase === 'showdown' && (
+            {gameState && gameState.players && gameState.players.length > 0 && (
               <div className="shrink-0">
                 <HandRankings gameState={gameState} />
               </div>
