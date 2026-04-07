@@ -83,6 +83,8 @@ export interface GameState {
   winners: WinnerInfo[] | null;
   /** Hand evaluations for ALL non-folded players at showdown */
   showdownHands: ShowdownHandInfo[] | null;
+  /** Persisted snapshot of the last completed hand */
+  lastHandResult: LastHandResult | null;
   lastAction: { agentId: string; action: PlayerAction; amount?: number } | null;
 }
 
@@ -96,6 +98,13 @@ export interface WinnerInfo {
   name: string;
   amount: number;
   hand: HandResult;
+}
+
+/** Snapshot of last completed hand — persisted in game_json for display after refresh */
+export interface LastHandResult {
+  winners: WinnerInfo[];
+  showdownHands: ShowdownHandInfo[] | null;
+  players: { agentId: string; name: string; holeCards: Card[]; hasFolded: boolean }[];
 }
 
 // ===== Room =====
@@ -129,6 +138,8 @@ export interface ClientGameState {
   winners: WinnerInfo[] | null;
   /** Hand evaluations for ALL non-folded players at showdown */
   showdownHands: ShowdownHandInfo[] | null;
+  /** Persisted snapshot of the last completed hand */
+  lastHandResult: LastHandResult | null;
   lastAction: { agentId: string; action: PlayerAction; amount?: number } | null;
   /** Monotonically-increasing version — use with ?since=N for efficient long-polling */
   stateVersion: number;

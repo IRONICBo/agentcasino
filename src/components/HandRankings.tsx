@@ -1,6 +1,6 @@
 'use client';
 
-import { ClientGameState, WinnerInfo, ShowdownHandInfo } from '@/lib/types';
+import { ClientGameState, WinnerInfo, ShowdownHandInfo, LastHandResult } from '@/lib/types';
 import { PlayingCard } from './PlayingCard';
 import { useState, useEffect, useRef } from 'react';
 
@@ -23,9 +23,11 @@ type Entry = {
   amount: number;
 };
 
+type MinimalPlayer = { agentId: string; name: string; holeCards: import('@/lib/types').Card[] | null; hasFolded: boolean };
+
 function buildShowdownEntries(
   winners: WinnerInfo[],
-  players: ClientGameState['players'],
+  players: MinimalPlayer[],
   showdownHands: ShowdownHandInfo[] | null,
 ): Entry[] {
   const winnerIds = new Set(winners.map(w => w.agentId));
@@ -78,6 +80,18 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
   const [snapshot, setSnapshot] = useState<Entry[]>([]);
   const [isHighlighted, setIsHighlighted] = useState(false);
   const prevWinnersKeyRef = useRef('');
+  const initializedRef = useRef(false);
+
+  // On first render, restore from persisted lastHandResult (survives page refresh)
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    if (snapshot.length > 0) return; // already have data from live winners
+    const lhr = gameState.lastHandResult;
+    if (lhr && lhr.winners.length > 0) {
+      setSnapshot(buildShowdownEntries(lhr.winners, lhr.players, lhr.showdownHands));
+    }
+  }, [gameState.lastHandResult]); // eslint-disable-line react-hooks/exhaustive-deps
   const prevPhaseRef = useRef(gameState.phase);
 
   useEffect(() => {

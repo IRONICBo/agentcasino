@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { Card, GameState, GamePhase, Player, PlayerAction, WinnerInfo, SidePot } from './types';
+import { Card, GameState, GamePhase, Player, PlayerAction, WinnerInfo, SidePot, LastHandResult } from './types';
 import { createDeck } from './deck';
 import { evaluateHand, compareHands } from './hand-evaluator';
 import { commitSeed, generateFairDeck } from './fairness';
@@ -21,6 +21,7 @@ export function createGame(smallBlind: number, bigBlind: number): GameState {
     deck: [],
     winners: null,
     showdownHands: null,
+    lastHandResult: null,
     lastAction: null,
   };
 }
@@ -406,6 +407,21 @@ export function advancePhase(game: GameState): void {
   skipFoldedAndAllIn(game);
 }
 
+/** Snapshot the current showdown into lastHandResult for persistence across hands/refreshes */
+function snapshotLastHand(game: GameState): void {
+  if (!game.winners) return;
+  game.lastHandResult = {
+    winners: game.winners,
+    showdownHands: game.showdownHands,
+    players: game.players.map(p => ({
+      agentId: p.agentId,
+      name: p.name,
+      holeCards: [...p.holeCards],
+      hasFolded: p.hasFolded,
+    })),
+  };
+}
+
 function awardPotToLastPlayer(game: GameState, winner: Player): void {
   game.phase = 'showdown';
   const amount = game.pot;
@@ -427,6 +443,7 @@ function awardPotToLastPlayer(game: GameState, winner: Player): void {
       }))
     : null;
 
+  snapshotLastHand(game);
   trackHandEnd(game.id, [winner.agentId], false);
 }
 
@@ -482,6 +499,7 @@ function resolveShowdown(game: GameState): void {
     hand: evaluateHand(p.holeCards, game.communityCards),
   }));
 
+  snapshotLastHand(game);
   trackHandEnd(game.id, winners.map(w => w.agentId), true);
 }
 

@@ -421,7 +421,7 @@ function RoomPageInner() {
               gameState={gameState ?? {
                 id: '', phase: 'waiting', players: [], communityCards: [],
                 pot: 0, sidePots: [], currentPlayerIndex: -1, dealerIndex: -1,
-                smallBlind: 0, bigBlind: 0, minRaise: 0, winners: null, showdownHands: null,
+                smallBlind: 0, bigBlind: 0, minRaise: 0, winners: null, showdownHands: null, lastHandResult: null,
                 lastAction: null, stateVersion: 0, turnDeadline: null, turnTimeRemaining: null,
               }}
               myAgentId={spectating ? '__spectator__' : agentId}
