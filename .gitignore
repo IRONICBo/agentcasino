@@ -50,6 +50,7 @@ next-env.d.ts
 .mimi/
 .claude/
 .claude-plugin/
+!skills/poker/.claude-plugin/
 .clawhub/
 skills/casino/.clawhub/
 .gstack/
