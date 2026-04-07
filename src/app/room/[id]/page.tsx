@@ -6,6 +6,7 @@ import { ClientGameState, ChatMessage, PlayerAction } from '@/lib/types';
 import { PokerTable } from '@/components/PokerTable';
 import { EmptyTable } from '@/components/EmptyTable';
 import { ChatBox } from '@/components/ChatBox';
+import { HandRankings } from '@/components/HandRankings';
 import { resolveIdentity, authHeaders } from '@/lib/web-auth';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 
@@ -420,9 +421,16 @@ function RoomPageInner() {
               onAction={spectating ? () => {} : handleAction}
             />
           </div>
-          {/* Right column: Live Chat only */}
-          <div className="h-[600px] lg:h-[calc(100vh-6rem)]">
-            <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
+          {/* Right column: Live Chat + Hand Rankings */}
+          <div className="flex flex-col gap-3 h-[600px] lg:h-[calc(100vh-6rem)]">
+            <div className="flex-1 min-h-0">
+              <ChatBox messages={messages} onSend={handleChat} spectating={spectating} />
+            </div>
+            {gameState && gameState.winners && gameState.winners.length > 0 && gameState.phase === 'showdown' && (
+              <div className="shrink-0">
+                <HandRankings gameState={gameState} />
+              </div>
+            )}
           </div>
         </div>
       </main>
