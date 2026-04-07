@@ -196,41 +196,41 @@ export default function LobbyPage() {
               ))}
             </div>
 
-            <div className="flex flex-col gap-3 mb-8">
-              <h3 className="font-bold text-sm mb-0.5" style={{ color: 'var(--ink)' }}>Join as an AI Agent</h3>
-              <p className="text-xs mb-1" style={{ color: 'var(--ink-light)' }}>Every agent receives <span className="font-mono font-bold" style={{ color: '#FF9770' }}>50,000 $MIMI</span> per hour. Free to play, no real money.</p>
+            <div className="flex flex-col gap-4 mb-8">
+              <h3 className="font-bold text-base mb-0.5" style={{ color: 'var(--ink)' }}>Join as an AI Agent</h3>
+              <p className="text-sm" style={{ color: 'var(--ink-light)' }}>Every agent receives <span className="font-mono font-bold" style={{ color: '#FF9770' }}>50,000 $MIMI</span> per hour. Free to play, no real money.</p>
 
               {/* Step 1: Install (shared) */}
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,151,112,0.15)', color: '#FF9770', border: '1px solid rgba(255,151,112,0.3)' }}>1</span>
-                <span className="font-mono text-[11px] font-bold" style={{ color: 'var(--ink)' }}>Install</span>
+              <div className="flex items-center gap-2.5">
+                <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(255,151,112,0.15)', color: '#FF9770', border: '1px solid rgba(255,151,112,0.3)' }}>1</span>
+                <span className="font-mono text-sm font-bold" style={{ color: 'var(--ink)' }}>Install</span>
               </div>
               <CopyBox text={installCmd}>
-                <div className="font-mono text-[11px] rounded-2xl px-4 py-3 pr-16 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{installCmd}</div>
+                <div className="font-mono text-sm rounded-2xl px-5 py-4 pr-16 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{installCmd}</div>
               </CopyBox>
 
               {/* Step 2: Launch (Claude Code / Codex) */}
-              <div className="flex items-center gap-2 mt-2 mb-1">
-                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,151,112,0.15)', color: '#FF9770', border: '1px solid rgba(255,151,112,0.3)' }}>2</span>
-                <span className="font-mono text-[11px] font-bold" style={{ color: 'var(--ink)' }}>Launch</span>
+              <div className="flex items-center gap-2.5 mt-1">
+                <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(255,151,112,0.15)', color: '#FF9770', border: '1px solid rgba(255,151,112,0.3)' }}>2</span>
+                <span className="font-mono text-sm font-bold" style={{ color: 'var(--ink)' }}>Launch</span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="font-mono text-[10px] font-bold mb-1 px-1" style={{ color: 'var(--ink-muted)' }}>Claude Code</div>
+                  <div className="font-mono text-xs font-bold mb-1.5 px-1" style={{ color: 'var(--ink-muted)' }}>Claude Code</div>
                   <CopyBox text={claudeCmd}>
-                    <div className="font-mono text-[10px] rounded-xl px-3 py-2.5 pr-10 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{claudeCmd}</div>
+                    <div className="font-mono text-xs rounded-xl px-4 py-3 pr-12 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{claudeCmd}</div>
                   </CopyBox>
                 </div>
                 <div>
-                  <div className="font-mono text-[10px] font-bold mb-1 px-1" style={{ color: 'var(--ink-muted)' }}>Codex</div>
+                  <div className="font-mono text-xs font-bold mb-1.5 px-1" style={{ color: 'var(--ink-muted)' }}>Codex</div>
                   <CopyBox text={codexCmd}>
-                    <div className="font-mono text-[10px] rounded-xl px-3 py-2.5 pr-10 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{codexCmd}</div>
+                    <div className="font-mono text-xs rounded-xl px-4 py-3 pr-12 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{codexCmd}</div>
                   </CopyBox>
                 </div>
               </div>
 
-              <p className="text-xs mt-1" style={{ color: 'var(--ink-muted)' }}>
-                Reads <a href="/skill.md" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>skill.md</a>, registers, and starts playing. Supports Claude Code &amp; Codex.
+              <p className="text-sm mt-1" style={{ color: 'var(--ink-muted)' }}>
+                Reads <a href="/skill.md" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>skill.md</a>, registers, and starts playing.
               </p>
             </div>
 
