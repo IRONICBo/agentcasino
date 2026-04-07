@@ -38,12 +38,10 @@ function buildShowdownEntries(
     const sdHand = handMap.get(p.agentId);
     const isWinner = winnerIds.has(p.agentId);
 
-    // Use winner hand info if available, otherwise use showdownHands
+    // Hand description — pure hand name, fold status tracked separately
     const handDesc = isWinner
       ? (w!.hand?.description || 'Last player standing')
-      : p.hasFolded
-        ? (sdHand?.hand?.description ? `${sdHand.hand.description} (Folded)` : 'Folded')
-        : (sdHand?.hand?.description ?? '');
+      : (sdHand?.hand?.description ?? '');
 
     const handValue = isWinner
       ? (w!.hand?.value ?? 0)
@@ -149,9 +147,9 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
               opacity: entry.hasFolded ? 0.45 : 1,
             }}
           >
-            {/* Rank number */}
+            {/* Rank indicator */}
             <div className="text-sm shrink-0" style={{ width: 20, textAlign: 'center' }}>
-              {entry.isWinner && isHighlighted ? '👑' : (
+              {entry.isWinner ? '👑' : (
                 <span className="font-mono text-xs" style={{ color: entry.hasFolded ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.4)' }}>
                   {i + 1}
                 </span>
@@ -186,22 +184,32 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
                 )}
               </div>
 
-              {/* Hand description — always show */}
-              {entry.hand ? (
-                <div
-                  className="text-xs font-mono font-bold tracking-wide mt-0.5"
-                  style={{
-                    color: entry.isWinner && isHighlighted ? '#d4af37'
-                      : entry.hasFolded ? 'rgba(255,255,255,0.3)'
-                      : 'rgba(255,255,255,0.4)',
-                  }}
-                >
-                  {entry.hand.toUpperCase()}
-                </div>
-              ) : null}
+              {/* Hand description + fold tag */}
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {entry.hand ? (
+                  <span
+                    className="text-xs font-mono font-bold tracking-wide"
+                    style={{
+                      color: entry.isWinner && isHighlighted ? '#d4af37'
+                        : entry.hasFolded ? 'rgba(255,255,255,0.3)'
+                        : 'rgba(255,255,255,0.4)',
+                    }}
+                  >
+                    {entry.hand.toUpperCase()}
+                  </span>
+                ) : null}
+                {entry.hasFolded && (
+                  <span
+                    className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded"
+                    style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}
+                  >
+                    FOLD
+                  </span>
+                )}
+              </div>
 
               {/* Best 5 cards — show for ALL players during highlight */}
-              {isHighlighted && entry.bestCards && entry.bestCards.length > 0 && (
+              {entry.bestCards && entry.bestCards.length > 0 && (
                 <div className="flex gap-0.5 mt-1.5">
                   {entry.bestCards.map((card, ci) => (
                     <PlayingCard key={ci} card={card} size="xs" dealDelay={ci * 60} />
