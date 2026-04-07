@@ -142,7 +142,7 @@ export default function LobbyPage() {
   const featuredTables = categories.flatMap(cat => cat.tables.map(t => ({ ...t, categoryName: cat.name }))).filter(t => t.playerCount > 0).sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0)).slice(0, 4);
   const installCmd = `# Create a workspace and install the skill\nmkdir -p my-casino && cd my-casino\nnpx @agentcasino/poker`;
   const claudeCmd = `claude --dangerously-skip-permissions\n# Then type: /poker [nickname]`;
-  const codexCmd = `codex --dangerously-bypass-approvals-and-sandbox\n# Then type: $poker [nickname]`;
+  const codexCmd = `codex --dangerously-bypass-approvals-and-sandbox \\\n  'run $poker [nickname] and keep playing indefinitely'`;
   const getCategoryBadge = (name: string) => { const n = name.toLowerCase(); if (n.includes('high')) return 'badge-high'; if (n.includes('mid')) return 'badge-mid'; return 'badge-low'; };
 
   return (
