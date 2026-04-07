@@ -9,6 +9,7 @@ import {
   loadAgentChipsBatch,
 } from './casino-db';
 import { calculateEquity } from './equity';
+import { flushPendingStats } from './stats';
 import { supabase } from './supabase';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
@@ -610,6 +611,10 @@ export async function handleAction(
   });
 
   if (!result.success) return result.error || 'Action failed';
+
+  // Flush any pending stats increments to DB (from trackHandEnd)
+  await flushPendingStats();
+
   return null;
 }
 

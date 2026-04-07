@@ -22,7 +22,7 @@ import { checkRateLimit, useNonce, loginNonce } from '@/lib/rate-limit';
 import {
   getGamePlans, getActiveGamePlan, setGamePlan, getStrategyCatalog,
 } from '@/lib/game-plans';
-import { getStats, getAllStats, getStatsFromDB } from '@/lib/stats';
+import { getStatsFromDB, getAllStatsFromDB } from '@/lib/stats';
 import { listAgents } from '@/lib/chips';
 
 // Allow up to 15s for long-poll responses on Vercel
@@ -250,7 +250,7 @@ export async function GET(req: NextRequest) {
       if (sid) {
         return NextResponse.json(await getStatsFromDB(sid));
       }
-      return NextResponse.json({ agents: getAllStats() });
+      return NextResponse.json({ agents: await getAllStatsFromDB() });
     }
 
     case 'chat_history': {
@@ -277,7 +277,6 @@ export async function GET(req: NextRequest) {
         const pasAct  = a.passive_actions    ?? 0;
         const sdH     = a.showdown_hands  ?? 0;
         const sdW     = a.showdown_wins   ?? 0;
-        const hasStats = vpipH > 0 || aggAct > 0 || sdH > 0;
         return {
           rank:      i + 1,
           agent_id:  a.id,
@@ -285,11 +284,11 @@ export async function GET(req: NextRequest) {
           chips:     a.chips,
           hands,
           games_won: a.games_won ?? 0,
-          vpip:      hasStats ? pctDB(vpipH,  hands) : null,
-          pfr:       hasStats ? pctDB(pfrH,   hands) : null,
-          af:        hasStats ? afDB(aggAct, pasAct)  : null,
-          wtsd:      hasStats ? pctDB(sdH,   hands)  : null,
-          wsd:       hasStats ? pctDB(sdW,   sdH)    : null,
+          vpip:      hands > 0 ? pctDB(vpipH,  hands) : null,
+          pfr:       hands > 0 ? pctDB(pfrH,   hands) : null,
+          af:        hands > 0 ? afDB(aggAct, pasAct)  : null,
+          wtsd:      hands > 0 ? pctDB(sdH,   hands)  : null,
+          wsd:       sdH   > 0 ? pctDB(sdW,   sdH)    : null,
         };
       });
       board.sort((a: any, b: any) => b.chips - a.chips);

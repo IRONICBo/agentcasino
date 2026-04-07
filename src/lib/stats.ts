@@ -1,77 +1,46 @@
 /**
  * Behavioral metrics — VPIP, PFR, AF, WTSD, W$SD, C-Bet.
  *
- * Tracked per agent across all hands. Used by GET ?action=stats.
+ * DB-first architecture: per-hand deltas are accumulated in transient memory,
+ * then flushed to Supabase via atomic RPC at hand end. No persistent in-memory state.
  */
 
 import type { PlayerAction } from './types';
-import { saveAgentStats, loadAgentStats } from './casino-db';
-
-// ---------------------------------------------------------------------------
-// Raw counters (persisted across hands)
-// ---------------------------------------------------------------------------
-
-interface AgentRawStats {
-  handsPlayed: number;
-  vpipHands: number;          // voluntarily put in pot preflop
-  pfrHands: number;           // preflop raise
-  aggressiveActions: number;  // raise + all_in (when aggressive)
-  passiveActions: number;     // call + check
-  showdownHands: number;
-  showdownWins: number;
-  cbetOpportunities: number;  // was preflop aggressor, flop was dealt
-  cbetMade: number;           // bet on flop as preflop aggressor
-  // Streak tracking
-  currentStreak: number;      // >0 = win streak, <0 = loss streak
-  bestWinStreak: number;
-  worstLossStreak: number;    // stored as positive number
-}
+import { incrementAgentStats, loadAgentStats, loadAllAgentStats } from './casino-db';
 
 // ---------------------------------------------------------------------------
 // Per-hand transient state (cleared after hand resolves)
 // ---------------------------------------------------------------------------
+
+interface PerAgentHandState {
+  vpip: boolean;
+  pfr: boolean;
+  inHand: boolean;  // hasn't folded yet
+  seenFlop: boolean;
+  // Delta accumulators for this hand
+  vpipDelta: number;
+  pfrDelta: number;
+  aggressiveDelta: number;
+  passiveDelta: number;
+  cbetOpportunityDelta: number;
+  cbetMadeDelta: number;
+}
 
 interface HandTracking {
   agentIds: string[];
   smallBlindId: string;
   bigBlindId: string;
   preflopAggressorId: string | null;
-  // per-agent state for this hand
-  agents: Map<string, {
-    vpip: boolean;
-    pfr: boolean;
-    inHand: boolean;  // hasn't folded yet
-    seenFlop: boolean;
-  }>;
+  agents: Map<string, PerAgentHandState>;
 }
 
-// ---------------------------------------------------------------------------
-// Global state
-// ---------------------------------------------------------------------------
-
+// Transient per-hand tracking — OK in memory (only lives during one hand)
 const g = globalThis as any;
-if (!g.__casino_agent_stats) g.__casino_agent_stats = new Map<string, AgentRawStats>();
 if (!g.__casino_hand_tracking) g.__casino_hand_tracking = new Map<string, HandTracking>();
-
-const agentStats: Map<string, AgentRawStats> = g.__casino_agent_stats;
 const handTracking: Map<string, HandTracking> = g.__casino_hand_tracking;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getOrCreate(agentId: string): AgentRawStats {
-  if (!agentStats.has(agentId)) {
-    agentStats.set(agentId, {
-      handsPlayed: 0, vpipHands: 0, pfrHands: 0,
-      aggressiveActions: 0, passiveActions: 0,
-      showdownHands: 0, showdownWins: 0,
-      cbetOpportunities: 0, cbetMade: 0,
-      currentStreak: 0, bestWinStreak: 0, worstLossStreak: 0,
-    });
-  }
-  return agentStats.get(agentId)!;
-}
+// Pending stats flush promise from last trackHandEnd
+let _pendingStatsFlush: Promise<void> | null = null;
 
 // ---------------------------------------------------------------------------
 // Tracking hooks — called from poker-engine
@@ -79,8 +48,7 @@ function getOrCreate(agentId: string): AgentRawStats {
 
 /**
  * Called when a new hand starts.
- * players: ordered array (index 0 = dealer on heads-up, or seat order)
- * sbIdx / bbIdx: indices into players array
+ * NOTE: Does NOT increment games_played — that's handled atomically by recordGame().
  */
 export function trackHandStart(
   handId: string,
@@ -88,11 +56,6 @@ export function trackHandStart(
   sbIdx: number,
   bbIdx: number,
 ): void {
-  // Increment handsPlayed for everyone seated
-  for (const id of agentIds) {
-    getOrCreate(id).handsPlayed++;
-  }
-
   const tracking: HandTracking = {
     agentIds,
     smallBlindId: agentIds[sbIdx] ?? '',
@@ -101,13 +64,18 @@ export function trackHandStart(
     agents: new Map(),
   };
   for (const id of agentIds) {
-    tracking.agents.set(id, { vpip: false, pfr: false, inHand: true, seenFlop: false });
+    tracking.agents.set(id, {
+      vpip: false, pfr: false, inHand: true, seenFlop: false,
+      vpipDelta: 0, pfrDelta: 0, aggressiveDelta: 0, passiveDelta: 0,
+      cbetOpportunityDelta: 0, cbetMadeDelta: 0,
+    });
   }
   handTracking.set(handId, tracking);
 }
 
 /**
  * Called after each player action in poker-engine.processAction.
+ * Accumulates deltas in the per-hand transient state.
  */
 export function trackAction(
   handId: string,
@@ -117,7 +85,6 @@ export function trackAction(
 ): void {
   const h = handTracking.get(handId);
   if (!h) return;
-  const s = getOrCreate(agentId);
   const a = h.agents.get(agentId);
   if (!a) return;
 
@@ -126,55 +93,53 @@ export function trackAction(
 
     switch (action) {
       case 'call':
-        if (!a.vpip) { a.vpip = true; s.vpipHands++; }
-        s.passiveActions++;
+        if (!a.vpip) { a.vpip = true; a.vpipDelta++; }
+        a.passiveDelta++;
         break;
       case 'raise':
       case 'all_in':
-        if (!a.vpip) { a.vpip = true; s.vpipHands++; }
-        if (!a.pfr) { a.pfr = true; s.pfrHands++; }
-        s.aggressiveActions++;
+        if (!a.vpip) { a.vpip = true; a.vpipDelta++; }
+        if (!a.pfr) { a.pfr = true; a.pfrDelta++; }
+        a.aggressiveDelta++;
         h.preflopAggressorId = agentId;
         break;
       case 'check':
-        if (!isBlindCheck) s.passiveActions++;
+        if (!isBlindCheck) a.passiveDelta++;
         break;
       case 'fold':
         a.inHand = false;
         break;
     }
   } else if (phase === 'flop') {
-    // Track c-bet opportunity / made
     if (!a.seenFlop) {
       a.seenFlop = true;
       if (h.preflopAggressorId === agentId && a.inHand) {
-        s.cbetOpportunities++;
+        a.cbetOpportunityDelta++;
         if (action === 'raise' || action === 'all_in') {
-          s.cbetMade++;
+          a.cbetMadeDelta++;
         }
       }
     }
 
     switch (action) {
-      case 'raise': case 'all_in': s.aggressiveActions++; break;
-      case 'call': s.passiveActions++; break;
-      case 'check': s.passiveActions++; break;
+      case 'raise': case 'all_in': a.aggressiveDelta++; break;
+      case 'call': a.passiveDelta++; break;
+      case 'check': a.passiveDelta++; break;
       case 'fold': a.inHand = false; break;
     }
   } else if (phase === 'turn' || phase === 'river') {
     switch (action) {
-      case 'raise': case 'all_in': s.aggressiveActions++; break;
-      case 'call': s.passiveActions++; break;
-      case 'check': s.passiveActions++; break;
+      case 'raise': case 'all_in': a.aggressiveDelta++; break;
+      case 'call': a.passiveDelta++; break;
+      case 'check': a.passiveDelta++; break;
       case 'fold': a.inHand = false; break;
     }
   }
 }
 
 /**
- * Called when a hand ends (showdown or last-player win).
- * winners: array of agentIds who won something.
- * atShowdown: true for showdown, false for last-player win.
+ * Called when a hand ends. Flushes accumulated deltas to DB via atomic RPC.
+ * Stores the flush promise — call flushPendingStats() to await it.
  */
 export function trackHandEnd(
   handId: string,
@@ -184,44 +149,70 @@ export function trackHandEnd(
   const h = handTracking.get(handId);
   if (!h) return;
 
-  if (atShowdown) {
-    for (const [id, a] of h.agents) {
-      if (a.inHand) {
-        const s = getOrCreate(id);
-        s.showdownHands++;
-        if (winnerIds.includes(id)) s.showdownWins++;
-      }
-    }
-  }
+  // Build per-agent flush calls
+  const flushCalls: Promise<void>[] = [];
 
-  // Streak tracking for all players in the hand
   for (const id of h.agentIds) {
-    const s = getOrCreate(id);
+    const a = h.agents.get(id);
+    if (!a) continue;
+
     const isWinner = winnerIds.includes(id);
-    if (isWinner) {
-      s.currentStreak = s.currentStreak > 0 ? s.currentStreak + 1 : 1;
-      if (s.currentStreak > s.bestWinStreak) s.bestWinStreak = s.currentStreak;
-    } else {
-      s.currentStreak = s.currentStreak < 0 ? s.currentStreak - 1 : -1;
-      const lossLen = -s.currentStreak;
-      if (lossLen > s.worstLossStreak) s.worstLossStreak = lossLen;
+
+    // Add showdown deltas
+    let showdownDelta = 0;
+    let showdownWinDelta = 0;
+    if (atShowdown && a.inHand) {
+      showdownDelta = 1;
+      if (isWinner) showdownWinDelta = 1;
     }
+
+    flushCalls.push(incrementAgentStats(id, {
+      isWinner,
+      vpipHands: a.vpipDelta,
+      pfrHands: a.pfrDelta,
+      aggressiveActions: a.aggressiveDelta,
+      passiveActions: a.passiveDelta,
+      showdownHands: showdownDelta,
+      showdownWins: showdownWinDelta,
+      cbetOpportunities: a.cbetOpportunityDelta,
+      cbetMade: a.cbetMadeDelta,
+    }));
   }
 
   handTracking.delete(handId);
 
-  // Persist stats for every participant — fire-and-forget
-  for (const id of h.agentIds) {
-    const s = agentStats.get(id);
-    if (s) saveAgentStats(id, s);
+  // Store the flush promise for the caller to await
+  _pendingStatsFlush = Promise.all(flushCalls).then(() => {});
+}
+
+/**
+ * Await the pending stats flush from the last trackHandEnd call.
+ * Call this after saving game state to ensure stats are persisted.
+ */
+export async function flushPendingStats(): Promise<void> {
+  if (_pendingStatsFlush) {
+    await _pendingStatsFlush;
+    _pendingStatsFlush = null;
   }
 }
 
-// hydrateAgentStats removed — DB-first architecture reads on demand
+// ---------------------------------------------------------------------------
+// Computed stats for API — DB-first, no in-memory dependency
+// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Computed stats for API
-// ---------------------------------------------------------------------------
+export interface AgentRawStats {
+  handsPlayed: number;
+  vpipHands: number;
+  pfrHands: number;
+  aggressiveActions: number;
+  passiveActions: number;
+  showdownHands: number;
+  showdownWins: number;
+  cbetOpportunities: number;
+  cbetMade: number;
+  bestWinStreak: number;
+  worstLossStreak: number;
+}
 
 export interface ComputedStats {
   agent_id: string;
@@ -232,7 +223,7 @@ export interface ComputedStats {
   wtsd_pct: number;
   w_sd_pct: number;
   cbet_pct: number;
-  style: string; // classification
+  style: string;
   current_streak: number;
   best_win_streak: number;
   worst_loss_streak: number;
@@ -241,7 +232,7 @@ export interface ComputedStats {
 
 function pct(n: number, d: number): number {
   if (d === 0) return 0;
-  return Math.round((n / d) * 1000) / 10; // 1 decimal
+  return Math.round((n / d) * 1000) / 10;
 }
 
 function classifyStyle(vpip: number, af: number): string {
@@ -251,7 +242,7 @@ function classifyStyle(vpip: number, af: number): string {
   return 'Calling Station';
 }
 
-function computeStats(agentId: string, r: AgentRawStats): ComputedStats {
+function computeStats(agentId: string, r: AgentRawStats & { currentStreak?: number }): ComputedStats {
   const vpip = pct(r.vpipHands, r.handsPlayed);
   const pfr = pct(r.pfrHands, r.handsPlayed);
   const af = r.passiveActions === 0
@@ -267,39 +258,31 @@ function computeStats(agentId: string, r: AgentRawStats): ComputedStats {
     w_sd_pct: pct(r.showdownWins, r.showdownHands),
     cbet_pct: pct(r.cbetMade, r.cbetOpportunities),
     style: classifyStyle(vpip, af),
-    current_streak: r.currentStreak,
+    current_streak: r.currentStreak ?? 0,
     best_win_streak: r.bestWinStreak,
     worst_loss_streak: r.worstLossStreak,
     raw: { ...r },
   };
 }
 
-export function getStats(agentId: string): ComputedStats {
-  return computeStats(agentId, getOrCreate(agentId));
-}
-
-/**
- * DB-authoritative version of getStats — reads persisted counters from Supabase
- * and merges the volatile currentStreak from in-memory (not persisted).
- * Use this in API handlers to avoid cross-instance staleness.
- */
+/** DB-first stats for a single agent. */
 export async function getStatsFromDB(agentId: string): Promise<ComputedStats> {
   const dbRow = await loadAgentStats(agentId);
-  if (!dbRow) return getStats(agentId); // fallback to memory if no DB row
-
-  // Merge: use DB for all persistent counters; keep in-memory streak (volatile)
-  const inMem = agentStats.get(agentId);
-  const merged: AgentRawStats = {
-    ...dbRow,
-    currentStreak:   inMem?.currentStreak   ?? 0,
-    bestWinStreak:   Math.max(dbRow.bestWinStreak,  inMem?.bestWinStreak  ?? 0),
-    worstLossStreak: Math.max(dbRow.worstLossStreak, inMem?.worstLossStreak ?? 0),
-  };
-  // Update in-memory map so subsequent in-process calls are also accurate
-  agentStats.set(agentId, merged);
-  return computeStats(agentId, merged);
+  if (!dbRow) {
+    return computeStats(agentId, {
+      handsPlayed: 0, vpipHands: 0, pfrHands: 0,
+      aggressiveActions: 0, passiveActions: 0,
+      showdownHands: 0, showdownWins: 0,
+      cbetOpportunities: 0, cbetMade: 0,
+      bestWinStreak: 0, worstLossStreak: 0,
+      currentStreak: 0,
+    });
+  }
+  return computeStats(agentId, dbRow);
 }
 
-export function getAllStats(): ComputedStats[] {
-  return Array.from(agentStats.keys()).map(getStats);
+/** DB-first stats for all agents. */
+export async function getAllStatsFromDB(): Promise<ComputedStats[]> {
+  const all = await loadAllAgentStats();
+  return Array.from(all.entries()).map(([id, row]) => computeStats(id, row));
 }
