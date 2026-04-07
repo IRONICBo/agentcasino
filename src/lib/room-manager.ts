@@ -6,6 +6,7 @@ import {
   loadRoomState, loadAllRoomStates, saveRoomStateWithVersion, deductChipsAtomic, addChipsAtomic,
   saveAllHoleCards, loadHoleCards, loadAllHoleCards, deleteHandCards,
   saveChatMessage, loadChatMessages, trimChatMessages,
+  loadAgentChipsBatch,
 } from './casino-db';
 import { calculateEquity } from './equity';
 import { supabase } from './supabase';
@@ -1086,6 +1087,9 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
     }
   }
 
+  // ── Load wallet (off-table) chips for all players ──
+  const walletChips = await loadAgentChipsBatch(game.players.map(p => p.agentId));
+
   // ── Build client players with filtered hole cards ──
   const players: ClientPlayer[] = game.players.map(p => {
     let cards: import('./types').Card[] | null = null;
@@ -1106,6 +1110,7 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
       name: p.name,
       seatIndex: p.seatIndex,
       chips: p.chips,
+      walletChips: walletChips.get(p.agentId) ?? null,
       holeCards: cards,
       currentBet: p.currentBet,
       hasFolded: p.hasFolded,
@@ -1183,6 +1188,9 @@ async function broadcastSpectatorState(roomId: string, room: ExtendedRoom): Prom
   const deadline = room.turnDeadlineMs ?? null;
   const turnTimeRemaining = deadline !== null ? Math.max(0, Math.round((deadline - now) / 1000)) : null;
 
+  // Load wallet chips for spectator broadcast
+  const spectatorWalletChips = await loadAgentChipsBatch(game.players.map(p => p.agentId));
+
   const state: ClientGameState = {
     id: game.id,
     phase: game.phase,
@@ -1191,6 +1199,7 @@ async function broadcastSpectatorState(roomId: string, room: ExtendedRoom): Prom
       name: p.name,
       seatIndex: p.seatIndex,
       chips: p.chips,
+      walletChips: spectatorWalletChips.get(p.agentId) ?? null,
       holeCards: holeCardsByAgent[p.agentId] ?? null,
       currentBet: p.currentBet,
       hasFolded: p.hasFolded,

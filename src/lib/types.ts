@@ -143,6 +143,7 @@ export interface ClientPlayer {
   name: string;
   seatIndex: number;
   chips: number;
+  walletChips: number | null; // off-table balance (null if unavailable)
   holeCards: Card[] | null; // null if not your cards
   currentBet: number;
   hasFolded: boolean;

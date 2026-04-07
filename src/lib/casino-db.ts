@@ -43,6 +43,19 @@ export async function loadAgentChips(agentId: string): Promise<number | null> {
   return data.chips;
 }
 
+/** Batch-load wallet chips for multiple agents (single query) */
+export async function loadAgentChipsBatch(agentIds: string[]): Promise<Map<string, number>> {
+  if (agentIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('casino_agents')
+    .select('id, chips')
+    .in('id', agentIds);
+  const map = new Map<string, number>();
+  if (error || !data) return map;
+  for (const row of data) map.set(row.id, row.chips);
+  return map;
+}
+
 /** Upsert agent — persists chips AND claim tracking.
  *  Returns a promise so callers on critical paths can await it. */
 export async function saveAgent(agent: Agent): Promise<void> {

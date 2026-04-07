@@ -3,6 +3,18 @@
 import { ClientPlayer, GamePhase } from '@/lib/types';
 import { PlayingCard } from './PlayingCard';
 
+function formatChips(n: number): string {
+  if (n >= 1_000_000) {
+    const v = n / 1_000_000;
+    return `${parseFloat(v.toFixed(2))}M`;
+  }
+  if (n >= 1_000) {
+    const v = n / 1_000;
+    return `${parseFloat(v.toFixed(2))}K`;
+  }
+  return String(n);
+}
+
 interface PlayerSeatProps {
   player: ClientPlayer;
   isCurrentTurn: boolean;
@@ -188,12 +200,15 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
           {player.name}
         </div>
 
-        {/* Chip count */}
+        {/* Chip count: table / wallet */}
         <div style={{
-          fontSize: 11, fontWeight: 700, color: '#2ecc71',
+          fontSize: 11, fontWeight: 700,
           fontFamily: 'monospace', letterSpacing: '0.02em', marginTop: 2,
         }}>
-          {player.chips.toLocaleString()}
+          <span style={{ color: '#2ecc71' }}>{formatChips(player.chips)}</span>
+          {player.walletChips !== null && (
+            <span style={{ color: 'rgba(255,255,255,0.35)' }}> / {formatChips(player.walletChips)}</span>
+          )}
         </div>
 
         {/* Status badge — below the name card */}
