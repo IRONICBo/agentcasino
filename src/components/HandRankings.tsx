@@ -11,60 +11,33 @@ const formatAmount = (n: number) =>
   : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K`
   : String(n);
 
-export function HandRankings({ gameState }: { gameState: ClientGameState }) {
-  // Track highlighted winners with a timer (independent of game state changes)
-  const [highlightedWinners, setHighlightedWinners] = useState<WinnerInfo[]>([]);
-  const prevWinnersRef = useRef<string>('');
+type Entry = { agentId: string; name: string; hand: string; handValue: number; bestCards: ClientGameState['players'][0]['holeCards']; holeCards: ClientGameState['players'][0]['holeCards']; isWinner: boolean; amount: number };
 
-  useEffect(() => {
-    const key = gameState.winners?.map(w => `${w.agentId}:${w.amount}`).join(',') ?? '';
-    if (key && key !== prevWinnersRef.current) {
-      prevWinnersRef.current = key;
-      setHighlightedWinners(gameState.winners!);
-      // Clear highlight after 5 seconds
-      const timer = setTimeout(() => setHighlightedWinners([]), HIGHLIGHT_DURATION_MS);
-      return () => clearTimeout(timer);
-    }
-    if (!key && prevWinnersRef.current) {
-      // Winners cleared by server — keep highlighting until timer expires (already set above)
-    }
-  }, [gameState.winners]);
-
-  const isHighlighted = highlightedWinners.length > 0;
-  const highlightIds = new Set(highlightedWinners.map(w => w.agentId));
-
-  // No players = nothing to show
-  if (!gameState.players || gameState.players.length === 0) return null;
-
-  // Build entries from current players
-  type Entry = { agentId: string; name: string; hand: string; handValue: number; bestCards: typeof gameState.players[0]['holeCards']; holeCards: typeof gameState.players[0]['holeCards']; isWinner: boolean; amount: number };
+function buildShowdownEntries(winners: WinnerInfo[], players: ClientGameState['players']): Entry[] {
+  const winnerIds = new Set(winners.map(w => w.agentId));
   const entries: Entry[] = [];
 
-  // If we have highlighted winners, add them
-  if (isHighlighted) {
-    for (const w of highlightedWinners) {
-      const player = gameState.players.find(p => p.agentId === w.agentId);
-      entries.push({
-        agentId: w.agentId,
-        name: w.name,
-        hand: w.hand?.description || 'Last player standing',
-        handValue: w.hand?.value ?? 0,
-        bestCards: w.hand?.cards ?? null,
-        holeCards: player?.holeCards ?? null,
-        isWinner: true,
-        amount: w.amount,
-      });
-    }
+  for (const w of winners) {
+    const player = players.find(p => p.agentId === w.agentId);
+    entries.push({
+      agentId: w.agentId,
+      name: w.name,
+      hand: w.hand?.description || 'Last player standing',
+      handValue: w.hand?.value ?? 0,
+      bestCards: w.hand?.cards ?? null,
+      holeCards: player?.holeCards ?? null,
+      isWinner: true,
+      amount: w.amount,
+    });
   }
 
-  // Add remaining players
-  for (const p of gameState.players) {
-    if (highlightIds.has(p.agentId)) continue;
+  for (const p of players) {
+    if (winnerIds.has(p.agentId)) continue;
     entries.push({
       agentId: p.agentId,
       name: p.name,
       hand: p.hasFolded ? 'Folded' : '',
-      handValue: -1, // folded/unknown = lowest
+      handValue: -1,
       bestCards: null,
       holeCards: (!p.hasFolded && p.holeCards && p.holeCards.length === 2) ? p.holeCards : null,
       isWinner: false,
@@ -72,11 +45,45 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
     });
   }
 
-  // Sort by hand value descending (winners/best hands first, folded last)
   entries.sort((a, b) => {
     if (a.isWinner !== b.isWinner) return a.isWinner ? -1 : 1;
     return b.handValue - a.handValue;
   });
+
+  return entries;
+}
+
+export function HandRankings({ gameState }: { gameState: ClientGameState }) {
+  // Snapshot: stores the last showdown result (persists across hands)
+  const [snapshot, setSnapshot] = useState<Entry[]>([]);
+  const [isHighlighted, setIsHighlighted] = useState(false);
+  const prevWinnersKeyRef = useRef('');
+  const prevPhaseRef = useRef(gameState.phase);
+
+  // When new winners appear → snapshot + highlight 5s
+  useEffect(() => {
+    const key = gameState.winners?.map(w => `${w.agentId}:${w.amount}`).join(',') ?? '';
+    if (key && key !== prevWinnersKeyRef.current) {
+      prevWinnersKeyRef.current = key;
+      setSnapshot(buildShowdownEntries(gameState.winners!, gameState.players));
+      setIsHighlighted(true);
+      const timer = setTimeout(() => setIsHighlighted(false), HIGHLIGHT_DURATION_MS);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.winners, gameState.players]);
+
+  // When a new hand starts (phase leaves showdown) → immediately un-highlight
+  useEffect(() => {
+    if (prevPhaseRef.current === 'showdown' && gameState.phase !== 'showdown') {
+      setIsHighlighted(false);
+    }
+    prevPhaseRef.current = gameState.phase;
+  }, [gameState.phase]);
+
+  // Nothing to show yet
+  if (snapshot.length === 0) return null;
+
+  const entries = snapshot;
 
   return (
     <div
