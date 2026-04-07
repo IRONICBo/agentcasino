@@ -52,12 +52,17 @@ interface PokerTableProps {
 }
 
 // ── Sound effects ──
+function isMuted(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem('poker-muted') === 'true';
+}
+
 function playSound(name: string, volume = 0.5) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || isMuted()) return;
   try {
     const audio = new Audio(`/sounds/${name}`);
     audio.volume = volume;
-    audio.play().catch(() => {}); // ignore autoplay restrictions
+    audio.play().catch(() => {});
   } catch {}
 }
 

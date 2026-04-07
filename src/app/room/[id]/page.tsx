@@ -28,6 +28,7 @@ function RoomPageInner() {
   const [spectating, setSpectating] = useState(spectateParam);
   const [allRooms, setAllRooms] = useState<{ id: string; name: string; playerCount: number }[]>([]);
   const [roomPickerOpen, setRoomPickerOpen] = useState(false);
+  const [muted, setMuted] = useState(() => typeof window !== 'undefined' && localStorage.getItem('poker-muted') === 'true');
   const [buyIn, setBuyIn] = useState(50000);
   const [error, setError] = useState('');
   const [errorVisible, setErrorVisible] = useState(false);
@@ -377,6 +378,20 @@ function RoomPageInner() {
                 {gameState.phase === 'preflop' ? 'PRE-FLOP' : gameState.phase.toUpperCase()}
               </span>
             )}
+            <button
+              onClick={() => {
+                const next = !muted;
+                setMuted(next);
+                localStorage.setItem('poker-muted', String(next));
+              }}
+              className="text-xs px-2 py-0.5 rounded border transition-colors"
+              style={{
+                borderColor: muted ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.15)',
+                color: muted ? '#ef4444' : 'rgba(255,255,255,0.6)',
+              }}
+            >
+              {muted ? '🔇 Muted' : '🔊 Sound'}
+            </button>
           </div>
         </div>
       </header>
