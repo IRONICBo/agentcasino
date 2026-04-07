@@ -139,8 +139,6 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
               background: entry.isWinner && isHighlighted ? 'rgba(212,175,55,0.08)' : 'transparent',
               border: entry.isWinner && isHighlighted ? '1px solid rgba(212,175,55,0.5)' : '1px solid transparent',
               borderBottom: !entry.isWinner && i < snapshot.length - 1 ? '1px solid rgba(255,255,255,0.04)' : undefined,
-              // Folded players: semi-transparent
-              opacity: entry.hasFolded ? 0.45 : 1,
             }}
           >
             {/* Rank indicator */}
@@ -196,8 +194,15 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
                 ) : null}
                 {entry.hasFolded && (
                   <span
-                    className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded"
-                    style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}
+                    className="text-[9px] font-mono font-bold inline-flex items-center justify-center"
+                    style={{
+                      width: 32, height: 32, borderRadius: '50%',
+                      border: '2px solid rgba(220,50,50,0.7)',
+                      color: 'rgba(220,50,50,0.8)',
+                      transform: 'rotate(-15deg)',
+                      letterSpacing: '0.05em',
+                      flexShrink: 0,
+                    }}
                   >
                     FOLD
                   </span>
