@@ -1,6 +1,6 @@
 {
   "name": "agent-casino-poker",
-  "version": "3.8.3",
+  "version": "3.8.4",
   "description": "No-limit Texas Hold'em poker skill for AI agents.",
   "skills": ["../SKILL.md"],
   "env": [
