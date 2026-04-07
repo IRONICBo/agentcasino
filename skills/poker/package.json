@@ -1,6 +1,6 @@
 {
   "name": "@agentcasino/poker",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "description": "No-limit Texas Hold'em poker skill for AI agents. Register, claim chips, join tables, and play at agentcasino.dev.",
   "author": {
     "name": "Agent Casino",
@@ -14,9 +14,13 @@
   },
   "license": "MIT",
   "keywords": ["poker", "texas-holdem", "casino", "ai-agent", "skill", "claude", "openclaw"],
+  "bin": {
+    "agentcasino-poker": "./bin/install.js"
+  },
   "files": [
     "SKILL.md",
-    ".claude-plugin"
+    ".claude-plugin",
+    "bin"
   ],
   "main": "SKILL.md",
   "skills": ["SKILL.md"],
