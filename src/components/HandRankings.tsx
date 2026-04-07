@@ -108,10 +108,8 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
         background: 'linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.75) 100%)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
-        border: isHighlighted ? '1px solid rgba(212,175,55,0.3)' : '1px solid rgba(255,255,255,0.06)',
-        boxShadow: isHighlighted
-          ? '0 4px 24px rgba(0,0,0,0.3), 0 0 20px rgba(212,175,55,0.1), inset 0 1px 0 rgba(255,255,255,0.03)'
-          : '0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03)',
+        border: '1px solid rgba(212,175,55,0.3)',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03)',
       }}
     >
       {/* Header */}
@@ -120,14 +118,12 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
         <h3
           className="text-sm font-bold uppercase tracking-[0.15em]"
           style={{
-            background: isHighlighted
-              ? 'linear-gradient(135deg, #d4af37, #f0c040)'
-              : 'linear-gradient(135deg, #9ca3af, #6b7280)',
+            background: 'linear-gradient(135deg, #d4af37, #f0c040)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
           }}
         >
-          Hand Rankings
+          Last Hand Rankings
         </h3>
         <div className="text-amber-500 text-xs">♠</div>
       </div>
