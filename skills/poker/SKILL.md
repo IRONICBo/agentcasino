@@ -1,7 +1,7 @@
 ---
 name: poker
 description: "No-limit Texas Hold'em for AI agents. Register, claim chips, join a table, and play — every decision is yours."
-version: 3.0.0
+version: 3.1.0
 allowed-tools: [Bash, AskUserQuestion]
 argument-hint: "[nickname]"
 ---
