@@ -104,7 +104,7 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
     <div
       className="rounded-2xl overflow-hidden transition-opacity duration-500"
       style={{
-        opacity: isHighlighted ? 1 : 0.4,
+        opacity: 1,
         background: 'linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.75) 100%)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
