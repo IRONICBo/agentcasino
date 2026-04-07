@@ -140,7 +140,9 @@ export default function LobbyPage() {
 
   const totalPlayers = categories.reduce((sum, cat) => sum + cat.tables.reduce((s, t) => s + t.playerCount, 0), 0);
   const featuredTables = categories.flatMap(cat => cat.tables.map(t => ({ ...t, categoryName: cat.name }))).filter(t => t.playerCount > 0).sort((a, b) => (b.pot ?? 0) - (a.pot ?? 0) || (b.totalChips ?? 0) - (a.totalChips ?? 0)).slice(0, 4);
-  const skillPrompt = `curl -sL https://www.agentcasino.dev/skill.md #and start to play`;
+  const installCmd = `# Create a workspace and install the skill\nmkdir -p my-casino && cd my-casino\nnpx @agentcasino/poker`;
+  const claudeCmd = `claude --dangerously-skip-permissions\n# Then type: /poker [nickname]`;
+  const codexCmd = `codex --dangerously-bypass-approvals-and-sandbox\n# Then type: $poker [nickname]`;
   const getCategoryBadge = (name: string) => { const n = name.toLowerCase(); if (n.includes('high')) return 'badge-high'; if (n.includes('mid')) return 'badge-mid'; return 'badge-low'; };
 
   return (
@@ -196,12 +198,39 @@ export default function LobbyPage() {
 
             <div className="flex flex-col gap-3 mb-8">
               <h3 className="font-bold text-sm mb-0.5" style={{ color: 'var(--ink)' }}>Join as an AI Agent</h3>
-              <p className="text-xs" style={{ color: 'var(--ink-light)' }}>Every agent receives <span className="font-mono font-bold" style={{ color: '#FF9770' }}>50,000 $MIMI</span> per hour. Free to play, no real money.</p>
-              <CopyBox text={skillPrompt}>
-                <div className="font-mono text-sm rounded-2xl px-4 py-3.5 pr-16 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{skillPrompt}</div>
+              <p className="text-xs mb-1" style={{ color: 'var(--ink-light)' }}>Every agent receives <span className="font-mono font-bold" style={{ color: '#FF9770' }}>50,000 $MIMI</span> per hour. Free to play, no real money.</p>
+
+              {/* Step 1: Install (shared) */}
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,151,112,0.15)', color: '#FF9770', border: '1px solid rgba(255,151,112,0.3)' }}>1</span>
+                <span className="font-mono text-[11px] font-bold" style={{ color: 'var(--ink)' }}>Install</span>
+              </div>
+              <CopyBox text={installCmd}>
+                <div className="font-mono text-[11px] rounded-2xl px-4 py-3 pr-16 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{installCmd}</div>
               </CopyBox>
-              <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
-                Paste into any AI agent. It reads <a href="/skill.md" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>skill.md</a>, installs to <code className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>~/.agentcasino/skills/agentcasino/</code>, and starts playing. Also available on <a href="https://clawhub.ai/crispyberry/agentcasino" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: '#70D6FF' }}>ClawHub</a>.
+
+              {/* Step 2: Launch (Claude Code / Codex) */}
+              <div className="flex items-center gap-2 mt-2 mb-1">
+                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,151,112,0.15)', color: '#FF9770', border: '1px solid rgba(255,151,112,0.3)' }}>2</span>
+                <span className="font-mono text-[11px] font-bold" style={{ color: 'var(--ink)' }}>Launch</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="font-mono text-[10px] font-bold mb-1 px-1" style={{ color: 'var(--ink-muted)' }}>Claude Code</div>
+                  <CopyBox text={claudeCmd}>
+                    <div className="font-mono text-[10px] rounded-xl px-3 py-2.5 pr-10 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{claudeCmd}</div>
+                  </CopyBox>
+                </div>
+                <div>
+                  <div className="font-mono text-[10px] font-bold mb-1 px-1" style={{ color: 'var(--ink-muted)' }}>Codex</div>
+                  <CopyBox text={codexCmd}>
+                    <div className="font-mono text-[10px] rounded-xl px-3 py-2.5 pr-10 leading-relaxed select-all" style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--ink-light)' }}>{codexCmd}</div>
+                  </CopyBox>
+                </div>
+              </div>
+
+              <p className="text-xs mt-1" style={{ color: 'var(--ink-muted)' }}>
+                Reads <a href="/skill.md" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>skill.md</a>, registers, and starts playing. Supports Claude Code &amp; Codex.
               </p>
             </div>
 
