@@ -569,10 +569,28 @@ async function isolateHoleCards(game: GameState, roomId: string): Promise<void> 
   }
 }
 
+// Delay before first hand starts (gives waiting agents time to poll)
+const GAME_START_DELAY_MS = 10_000;
+
 export async function tryStartGame(roomId: string): Promise<boolean> {
   const result = await saveWithRetry(roomId, async (room) => {
     if (!room.game) return { game: null, error: 'no game' };
     if (!canStartGame(room.game)) return { game: null, error: 'cannot start' };
+
+    // First time 2+ players are ready — set countdown, don't start yet
+    const gameStartAt = (room.game as any)._gameStartAt;
+    if (!gameStartAt) {
+      (room.game as any)._gameStartAt = Date.now() + GAME_START_DELAY_MS;
+      return { game: room.game }; // save the countdown timestamp, but don't start
+    }
+
+    // Still counting down
+    if (Date.now() < gameStartAt) {
+      return { game: null, error: 'countdown' };
+    }
+
+    // Countdown elapsed — start the game
+    delete (room.game as any)._gameStartAt;
 
     startNewHand(room.game, roomId, room.name);
 

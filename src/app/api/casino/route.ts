@@ -221,12 +221,18 @@ export async function GET(req: NextRequest) {
       const isMyTurn = state.players[state.currentPlayerIndex]?.agentId === id;
       const validActions = isMyTurn ? await getValidActionsForRoom(roomId) : [];
 
+      // Include countdown timer if game is about to start
+      const roomFinal = await getRoom(roomId);
+      const gameStartAt = (roomFinal?.game as any)?._gameStartAt;
+      const gameStartsIn = gameStartAt ? Math.max(0, Math.round((gameStartAt - Date.now()) / 1000)) : null;
+
       return NextResponse.json({
         ...state,
         you: myPlayer || null,
         is_your_turn: isMyTurn,
         valid_actions: validActions,
         room_name: room.name,
+        ...(gameStartsIn !== null && { gameStartsIn }),
       });
     }
 
