@@ -12,6 +12,8 @@ import {
   addChatMessage,
   getChatMessages,
   enforceTimeoutForRoom,
+  recoverStuckGame,
+  evictStalePlayers,
 } from '@/lib/room-manager';
 import {
   verifyMimiLogin, simpleLogin, extractApiKey,
@@ -182,8 +184,10 @@ export async function GET(req: NextRequest) {
       const roomId = req.nextUrl.searchParams.get('room_id');
       if (!roomId) return err('room_id required');
 
-      // Enforce timeouts before anything
+      // Single cleanup pass: timeout → stuck recovery → eviction (one write each, max)
       await enforceTimeoutForRoom(roomId);
+      await recoverStuckGame(roomId);
+      await evictStalePlayers(roomId);
 
       const room = await getRoom(roomId);
       if (!room) return err('Room not found', 404);
@@ -197,9 +201,6 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Enforce timeouts again after poll wait
-      await enforceTimeoutForRoom(roomId);
-
       // Auto-advance: showdown -> next hand
       const roomAfter = await getRoom(roomId);
       if (roomAfter?.game?.phase === 'showdown' && roomAfter.game.players.length >= 2) {
@@ -211,7 +212,7 @@ export async function GET(req: NextRequest) {
         await tryStartGame(roomId);
       }
 
-      // Auto-heartbeat
+      // Auto-heartbeat (throttled to every 30s)
       if (id && id !== '__spectator__') await heartbeatPlayer(roomId, id);
 
       const state = await getClientGameState(roomId, id);

@@ -237,7 +237,7 @@ async function loadRoom(roomId: string): Promise<ExtendedRoom | null> {
 async function saveWithRetry(
   roomId: string,
   buildState: (room: ExtendedRoom) => Promise<{ game: GameState | null; error?: string }>,
-  maxRetries = 3,
+  maxRetries = 5,
 ): Promise<{ success: boolean; room?: ExtendedRoom; error?: string }> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const room = await loadRoom(roomId);
@@ -268,8 +268,9 @@ async function saveWithRetry(
       return { success: true, room };
     }
 
-    // Version conflict — retry
+    // Version conflict — retry with jittered delay
     console.log(`[rooms] version conflict on ${roomId}, attempt ${attempt + 1}/${maxRetries}`);
+    await new Promise(r => setTimeout(r, 50 + Math.random() * 150));
   }
 
   return { success: false, error: 'Conflict: too many concurrent updates, please retry' };
@@ -355,6 +356,50 @@ export async function enforceTimeoutForRoom(roomId: string): Promise<void> {
     }
     changed = await enforceTimeout(room);
   }
+}
+
+/** Detect and fix stuck games where currentPlayerIndex points to a folded/invalid player or deadline is missing. */
+export async function recoverStuckGame(roomId: string): Promise<void> {
+  const room = await loadRoom(roomId);
+  if (!room?.game || room.game.phase === 'waiting' || room.game.phase === 'showdown') return;
+
+  const current = room.game.players[room.game.currentPlayerIndex];
+  const gameAny = room.game as any;
+  const hasDeadline = !!(gameAny._turnDeadlineMs ?? room.turnDeadlineMs);
+  const isCurrentFolded = !current || current.hasFolded;
+  const isCurrentAllInOnly = current?.isAllIn && room.game.players.filter(p => !p.hasFolded && !p.isAllIn).length <= 1;
+  const isStuck = isCurrentFolded || isCurrentAllInOnly || !hasDeadline;
+
+  if (!isStuck) return;
+
+  console.log(`[rooms] stuck game detected in ${roomId} — currentPlayerIndex=${room.game.currentPlayerIndex}, hasDeadline=${hasDeadline}, currentFolded=${isCurrentFolded}`);
+
+  if (!hasDeadline && current && !current.hasFolded && !isCurrentAllInOnly) {
+    room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+    (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
+  } else {
+    const { advancePhase: advancePhaseEngine } = await import('./poker-engine');
+    const nonFolded = room.game.players.filter(p => !p.hasFolded);
+    if (nonFolded.length === 1) {
+      const winner = nonFolded[0];
+      const potAmount = room.game.pot;
+      winner.chips += potAmount;
+      room.game.pot = 0;
+      room.game.phase = 'showdown' as any;
+      room.game.winners = [{ agentId: winner.agentId, name: winner.name, amount: potAmount, hand: null as any }];
+    } else if (nonFolded.length === 0) {
+      room.game.phase = 'showdown' as any;
+    } else {
+      advancePhaseEngine(room.game);
+    }
+  }
+
+  const snapshot: any = { ...room.game };
+  if (snapshot.players) {
+    snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
+  }
+  if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
+  await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
 }
 
 // ─── Join / Leave ─────────────────────────────────────────────────────────────
@@ -947,72 +992,14 @@ export async function listCategories(recommended = false): Promise<(Omit<StakeCa
 
 // ─── Client state ─────────────────────────────────────────────────────────────
 
+/**
+ * Pure read — no DB writes. All cleanup (eviction, timeouts, stuck recovery)
+ * is handled by enforceTimeoutForRoom / evictStalePlayers / recoverStuckGame
+ * called separately in the route handler or cron.
+ */
 export async function getClientGameState(roomId: string, viewerAgentId: string): Promise<ClientGameState | null> {
-  // Evict stale players (piggyback on every poll)
-  await evictStalePlayers(roomId);
-
   const room = await loadRoom(roomId);
   if (!room || !room.game) return null;
-
-  // Enforce any expired timeouts
-  let changed = await enforceTimeout(room);
-  while (changed) {
-    const snapshot: any = { ...room.game };
-    // Strip hole cards from snapshot (they live in casino_hand_cards)
-    if (snapshot.players) {
-      snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
-    }
-    if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
-    const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
-    if (saveResult.success) room.stateVersion = saveResult.newVersion;
-    changed = await enforceTimeout(room);
-  }
-
-  // ── Stuck game recovery ──
-  if (room.game && room.game.phase !== 'waiting' && room.game.phase !== 'showdown') {
-    const current = room.game.players[room.game.currentPlayerIndex];
-    const gameAny = room.game as any;
-    const hasDeadline = !!(gameAny._turnDeadlineMs ?? room.turnDeadlineMs);
-    const isCurrentFolded = !current || current.hasFolded;
-    const isCurrentAllInOnly = current?.isAllIn && room.game.players.filter(p => !p.hasFolded && !p.isAllIn).length <= 1;
-    // Stuck: current player is folded/invalid, OR no deadline set (game will never timeout)
-    const isStuck = isCurrentFolded || isCurrentAllInOnly || !hasDeadline;
-
-    if (isStuck) {
-      console.log(`[rooms] stuck game detected in ${roomId} — currentPlayerIndex=${room.game.currentPlayerIndex}, hasDeadline=${hasDeadline}, currentFolded=${isCurrentFolded}`);
-
-      // If no deadline but current player is valid, just set a deadline
-      if (!hasDeadline && current && !current.hasFolded && !isCurrentAllInOnly) {
-        room.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
-        (room.game as any)._turnDeadlineMs = room.turnDeadlineMs;
-      } else {
-        // Current player is folded/invalid — advance the game
-        const { advancePhase: advancePhaseEngine } = await import('./poker-engine');
-        const nonFolded = room.game.players.filter(p => !p.hasFolded);
-        if (nonFolded.length === 1) {
-          const winner = nonFolded[0];
-          const potAmount = room.game.pot;
-          winner.chips += potAmount;
-          room.game.pot = 0;
-          room.game.phase = 'showdown' as any;
-          room.game.winners = [{ agentId: winner.agentId, name: winner.name, amount: potAmount, hand: null as any }];
-        } else if (nonFolded.length === 0) {
-          room.game.phase = 'showdown' as any;
-        } else {
-          advancePhaseEngine(room.game);
-        }
-      }
-
-      // Save fixed state
-      const snapshot: any = { ...room.game };
-      if (snapshot.players) {
-        snapshot.players = snapshot.players.map((p: any) => ({ ...p, holeCards: [] }));
-      }
-      if (room.turnDeadlineMs) snapshot._turnDeadlineMs = room.turnDeadlineMs;
-      const saveResult = await saveRoomStateWithVersion(roomId, snapshot, room.stateVersion);
-      if (saveResult.success) room.stateVersion = saveResult.newVersion;
-    }
-  }
 
   const game = room.game;
   if (!game) return null;
@@ -1199,13 +1186,23 @@ export async function getValidActionsForRoom(roomId: string): Promise<ReturnType
 
 // ─── Heartbeat ────────────────────────────────────────────────────────────────
 
+const HEARTBEAT_THROTTLE_MS = 30_000; // Only write heartbeat every 30s
+
 export async function heartbeatPlayer(roomId: string, agentId: string): Promise<boolean> {
-  const result = await saveWithRetry(roomId, async (room) => {
-    if (!room.game) return { game: null, error: 'no game' };
-    const player = room.game.players.find(p => p.agentId === agentId);
-    if (!player) return { game: null, error: 'not seated' };
-    player.lastSeenAt = Date.now();
-    return { game: room.game };
+  // Check if heartbeat is needed (throttle to avoid unnecessary writes)
+  const room = await loadRoom(roomId);
+  if (!room?.game) return false;
+  const player = room.game.players.find(p => p.agentId === agentId);
+  if (!player) return false;
+  const lastSeen = player.lastSeenAt ?? 0;
+  if (Date.now() - lastSeen < HEARTBEAT_THROTTLE_MS) return true; // still fresh, skip write
+
+  const result = await saveWithRetry(roomId, async (r) => {
+    if (!r.game) return { game: null, error: 'no game' };
+    const p = r.game.players.find(p => p.agentId === agentId);
+    if (!p) return { game: null, error: 'not seated' };
+    p.lastSeenAt = Date.now();
+    return { game: r.game };
   });
   return result.success;
 }
