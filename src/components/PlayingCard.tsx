@@ -10,14 +10,17 @@ const suitColor: Record<string, string> = {
 };
 
 export function PlayingCard({
-  card, faceDown, small, className = '', dealDelay = 0,
+  card, faceDown, small, size, className = '', dealDelay = 0,
 }: {
   card?: Card | null; faceDown?: boolean; small?: boolean;
+  size?: 'xs' | 'sm' | 'md';
   className?: string; dealDelay?: number;
 }) {
-  const W = small ? 34 : 54;
-  const H = small ? 48 : 76;
-  const R = small ? 4 : 6;
+  const isXs = size === 'xs';
+  const isSm = size === 'sm' || small;
+  const W = isXs ? 22 : isSm ? 34 : 54;
+  const H = isXs ? 30 : isSm ? 48 : 76;
+  const R = isXs ? 3 : isSm ? 4 : 6;
 
   // ── Card back ──
   if (!card || faceDown) {
@@ -39,7 +42,7 @@ export function PlayingCard({
         <div style={{
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: small ? 8 : 11, color: 'rgba(212,175,55,0.3)',
+          fontSize: isXs ? 6 : isSm ? 8 : 11, color: 'rgba(212,175,55,0.3)',
           fontFamily: 'serif',
         }}>♦</div>
       </div>
@@ -48,9 +51,9 @@ export function PlayingCard({
 
   const color = suitColor[card.suit];
   const sym = suitSymbols[card.suit];
-  const rankSize = small ? 9 : 13;
-  const suitSize = small ? 7 : 10;
-  const centerSize = small ? 16 : 26;
+  const rankSize = isXs ? 7 : isSm ? 9 : 13;
+  const suitSize = isXs ? 5 : isSm ? 7 : 10;
+  const centerSize = isXs ? 10 : isSm ? 16 : 26;
 
   // ── Face-up card ──
   return (
@@ -75,7 +78,7 @@ export function PlayingCard({
 
       {/* Top-left rank + suit */}
       <div style={{
-        position: 'absolute', top: small ? 1 : 2, left: small ? 2 : 3,
+        position: 'absolute', top: isXs ? 1 : isSm ? 1 : 2, left: isXs ? 1 : isSm ? 2 : 3,
         color, lineHeight: 1.1, textAlign: 'center',
       }}>
         <div style={{ fontSize: rankSize, fontWeight: 900, fontFamily: 'Georgia, serif', letterSpacing: '-0.03em' }}>
@@ -96,7 +99,7 @@ export function PlayingCard({
 
       {/* Bottom-right (rotated) */}
       <div style={{
-        position: 'absolute', bottom: small ? 1 : 2, right: small ? 2 : 3,
+        position: 'absolute', bottom: isXs ? 1 : isSm ? 1 : 2, right: isXs ? 1 : isSm ? 2 : 3,
         color, lineHeight: 1.1, textAlign: 'center',
         transform: 'rotate(180deg)',
       }}>

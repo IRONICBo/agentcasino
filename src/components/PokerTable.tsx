@@ -305,85 +305,151 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
         );
       })}
 
-      {/* ── Winners overlay ── */}
+      {/* ── Winner banner (top, non-blocking) ── */}
       {hasWinners && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 30,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {/* Backdrop */}
-          <div style={{
-            position: 'absolute', inset: 0,
-            background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 100%)',
-            borderRadius: '50% 50% 0 0',
-            animation: 'fade-up 0.3s ease both',
-          }} />
-
-          {/* Gold rays */}
-          <div style={{
-            position: 'absolute', top: '50%', left: '50%',
-            width: 300, height: 300, marginLeft: -150, marginTop: -150,
-            animation: 'rays-spin 8s linear infinite',
-            background: `conic-gradient(
-              from 0deg,
-              transparent 0deg, rgba(212,175,55,0.06) 10deg, transparent 20deg,
-              transparent 45deg, rgba(212,175,55,0.04) 55deg, transparent 65deg,
-              transparent 90deg, rgba(212,175,55,0.06) 100deg, transparent 110deg,
-              transparent 135deg, rgba(212,175,55,0.04) 145deg, transparent 155deg,
-              transparent 180deg, rgba(212,175,55,0.06) 190deg, transparent 200deg,
-              transparent 225deg, rgba(212,175,55,0.04) 235deg, transparent 245deg,
-              transparent 270deg, rgba(212,175,55,0.06) 280deg, transparent 290deg,
-              transparent 315deg, rgba(212,175,55,0.04) 325deg, transparent 335deg
-            )`,
-            borderRadius: '50%',
-          }} />
-
+        <div
+          className="animate-winner-pop"
+          style={{
+            position: 'absolute', top: '-8%', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 30, display: 'flex', alignItems: 'center', gap: 12,
+            background: 'linear-gradient(135deg, rgba(20,18,12,0.95) 0%, rgba(15,13,8,0.95) 100%)',
+            border: '1px solid rgba(212,175,55,0.5)',
+            borderRadius: 12, padding: '8px 20px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.6), 0 0 20px rgba(212,175,55,0.1)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
           {/* Confetti */}
-          <div style={{ position: 'absolute', top: '50%', left: '50%' }}>
-            {Array.from({ length: 24 }).map((_, i) => <ConfettiPiece key={i} i={i} />)}
+          <div style={{ position: 'absolute', top: '50%', left: '50%', pointerEvents: 'none' }}>
+            {Array.from({ length: 16 }).map((_, i) => <ConfettiPiece key={i} i={i} />)}
           </div>
 
-          {/* Winner card */}
-          <div
-            className="animate-winner-pop"
-            style={{
-              position: 'relative', zIndex: 40,
-              background: 'linear-gradient(160deg, #1a1a1a 0%, #111 100%)',
-              border: '1px solid rgba(212,175,55,0.5)',
-              borderRadius: 16, padding: '20px 36px 24px',
-              textAlign: 'center',
-              boxShadow: '0 0 0 1px rgba(212,175,55,0.1), 0 20px 60px rgba(0,0,0,0.8), 0 0 40px rgba(212,175,55,0.1)',
-            }}
-          >
-            {/* Gold top line */}
-            <div style={{ height: 2, background: 'linear-gradient(90deg, transparent, #d4af37, transparent)', borderRadius: 1, marginBottom: 14 }} />
-
-            <div style={{
-              fontSize: 9, letterSpacing: '0.25em', textTransform: 'uppercase',
-              color: 'rgba(212,175,55,0.6)', fontFamily: 'monospace', marginBottom: 10,
-            }}>
-              ✦ Winner ✦
-            </div>
-
-            {gameState.winners!.map((w, i) => (
-              <div key={i} style={{ marginBottom: i < gameState.winners!.length - 1 ? 12 : 0 }}>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#f0f0f0', marginBottom: 4 }}>
+          {gameState.winners!.map((w, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative', zIndex: 1 }}>
+              {i > 0 && <div style={{ width: 1, height: 24, background: 'rgba(212,175,55,0.3)' }} />}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#f0f0f0', fontFamily: 'monospace' }}>
                   {w.name}
                 </div>
                 <div
                   className="text-gold-shine"
-                  style={{ fontSize: 28, fontWeight: 900, fontFamily: 'monospace', letterSpacing: '-0.02em' }}
+                  style={{ fontSize: 18, fontWeight: 900, fontFamily: 'monospace', letterSpacing: '-0.02em' }}
                 >
                   +{formatAmount(w.amount)}
                 </div>
-                <div style={{ fontSize: 10, color: 'rgba(180,180,180,0.6)', marginTop: 4, fontFamily: 'monospace', letterSpacing: '0.06em' }}>
-                  {w.hand.description.toUpperCase()}
-                </div>
               </div>
-            ))}
+            </div>
+          ))}
+        </div>
+      )}
 
-            <div style={{ height: 2, background: 'linear-gradient(90deg, transparent, #d4af37, transparent)', borderRadius: 1, marginTop: 14 }} />
+      {/* ── Showdown hand rankings (right side) ── */}
+      {hasWinners && gameState.phase === 'showdown' && (
+        <div
+          className="animate-winner-pop"
+          style={{
+            position: 'absolute', top: '8%', right: '-42%',
+            zIndex: 30, minWidth: 200,
+            background: 'linear-gradient(160deg, rgba(20,18,12,0.95) 0%, rgba(12,11,8,0.95) 100%)',
+            border: '1px solid rgba(212,175,55,0.3)',
+            borderRadius: 12, padding: '10px 14px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <div style={{
+            fontSize: 8, letterSpacing: '0.2em', textTransform: 'uppercase',
+            color: 'rgba(212,175,55,0.6)', fontFamily: 'monospace', marginBottom: 8, textAlign: 'center',
+          }}>
+            ♠ Hand Rankings ♠
           </div>
+
+          {/* Sort: winners first, then by hand description */}
+          {(() => {
+            const winnerIds = new Set(gameState.winners!.map(w => w.agentId));
+            // Build player hand info from winners + non-folded players
+            const entries: { agentId: string; name: string; hand: string; cards: typeof gameState.players[0]['holeCards']; isWinner: boolean; amount: number }[] = [];
+
+            // Add winners
+            for (const w of gameState.winners!) {
+              const player = gameState.players.find(p => p.agentId === w.agentId);
+              entries.push({
+                agentId: w.agentId,
+                name: w.name,
+                hand: w.hand?.description || 'Last player standing',
+                cards: player?.holeCards ?? null,
+                isWinner: true,
+                amount: w.amount,
+              });
+            }
+
+            // Add non-folded non-winners who showed cards
+            for (const p of gameState.players) {
+              if (!winnerIds.has(p.agentId) && !p.hasFolded && p.holeCards && p.holeCards.length === 2) {
+                entries.push({
+                  agentId: p.agentId,
+                  name: p.name,
+                  hand: '',
+                  cards: p.holeCards,
+                  isWinner: false,
+                  amount: 0,
+                });
+              }
+            }
+
+            return entries.map((entry, i) => (
+              <div key={entry.agentId} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 8px', borderRadius: 8,
+                background: entry.isWinner ? 'rgba(212,175,55,0.1)' : 'transparent',
+                borderBottom: i < entries.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+              }}>
+                {/* Rank indicator */}
+                <div style={{
+                  fontSize: 10, fontWeight: 900, color: entry.isWinner ? '#d4af37' : 'rgba(255,255,255,0.3)',
+                  width: 16, textAlign: 'center', fontFamily: 'monospace',
+                }}>
+                  {entry.isWinner ? '👑' : `#${i + 1}`}
+                </div>
+
+                {/* Hole cards */}
+                <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                  {entry.cards ? entry.cards.map((card, ci) => (
+                    <PlayingCard key={ci} card={card} size="xs" dealDelay={0} />
+                  )) : (
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>--</span>
+                  )}
+                </div>
+
+                {/* Name + hand */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 10, fontWeight: 700,
+                    color: entry.isWinner ? '#f0f0f0' : 'rgba(255,255,255,0.5)',
+                    fontFamily: 'monospace',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {entry.name}
+                  </div>
+                  <div style={{
+                    fontSize: 8, fontFamily: 'monospace', letterSpacing: '0.04em',
+                    color: entry.isWinner ? 'rgba(212,175,55,0.8)' : 'rgba(255,255,255,0.3)',
+                  }}>
+                    {entry.hand ? entry.hand.toUpperCase() : 'MUCKED'}
+                  </div>
+                </div>
+
+                {/* Amount won */}
+                {entry.isWinner && (
+                  <div style={{
+                    fontSize: 11, fontWeight: 800, color: '#4ade80', fontFamily: 'monospace',
+                  }}>
+                    +{formatAmount(entry.amount)}
+                  </div>
+                )}
+              </div>
+            ));
+          })()}
         </div>
       )}
 
