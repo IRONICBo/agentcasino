@@ -14,21 +14,26 @@ function formatTime(timestamp: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function getNameColor(agentId: string, name: string): string {
-  if (agentId === 'system') return 'text-amber-400';
-  const hue = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
-  // Map to one of several distinct chat colors
-  const colors = [
-    'text-emerald-400',
-    'text-sky-400',
-    'text-violet-400',
-    'text-pink-400',
-    'text-teal-400',
-    'text-orange-400',
-    'text-cyan-400',
-    'text-lime-400',
-  ];
-  return colors[hue % colors.length];
+// High-contrast name colors — hand-picked for max distinction on dark backgrounds
+const NAME_COLORS = [
+  '#2ecc71', // emerald green
+  '#e74c3c', // vivid red
+  '#3498db', // bright blue
+  '#f39c12', // amber/orange
+  '#9b59b6', // purple
+  '#1abc9c', // teal
+  '#e91e63', // hot pink
+  '#00bcd4', // cyan
+  '#cddc39', // lime yellow
+  '#ff7043', // deep orange
+  '#7c4dff', // electric purple
+  '#26c6da', // light teal
+];
+
+function getNameColor(agentId: string, name: string): string | null {
+  if (agentId === 'system') return null; // handled separately
+  const hash = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return NAME_COLORS[hash % NAME_COLORS.length];
 }
 
 export function ChatBox({ messages, onSend, spectating }: ChatBoxProps) {
@@ -112,7 +117,10 @@ export function ChatBox({ messages, onSend, spectating }: ChatBoxProps) {
                     {formatTime(msg.timestamp)}
                   </span>
                 )}
-                <span className={`text-sm font-bold shrink-0 ${getNameColor(msg.agentId, msg.name)}`}>
+                <span
+                  className="text-sm font-bold shrink-0"
+                  style={{ color: getNameColor(msg.agentId, msg.name) ?? undefined }}
+                >
                   {msg.name}
                 </span>
                 <span className="text-sm text-gray-300 leading-relaxed break-words">{msg.message}</span>
