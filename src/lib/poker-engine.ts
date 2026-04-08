@@ -132,6 +132,7 @@ export function startNewHand(game: GameState, roomId?: string, roomName?: string
   game.deck = fairDeck || createDeck(); // fallback to CSPRNG if fairness fails
 
   game.id = handId;
+  (game as any)._handStartedAt = Date.now();
   game.communityCards = [];
   game.pot = 0;
   game.sidePots = [];
@@ -234,11 +235,14 @@ export function getValidActions(game: GameState): { action: PlayerAction; minAmo
     actions.push({ action: 'call', minAmount: Math.min(toCall, player.chips) });
   }
 
+  // Raise requires the player to put in at least highestBet + minRaise total.
+  // If they can't afford a full raise, only all_in is available.
   const minRaiseTotal = highestBet + game.minRaise;
-  if (player.chips > toCall) {
+  const minRaiseAmount = minRaiseTotal - player.currentBet; // chips needed for full raise
+  if (player.chips >= minRaiseAmount) {
     actions.push({
       action: 'raise',
-      minAmount: Math.min(minRaiseTotal - player.currentBet, player.chips),
+      minAmount: minRaiseAmount,
       maxAmount: player.chips,
     });
   }
@@ -280,16 +284,19 @@ export function processAction(game: GameState, agentId: string, action: PlayerAc
     case 'raise': {
       if (!amount || !Number.isFinite(amount) || amount <= 0) return false;
       const raiseAmount = Math.min(amount, player.chips);
-      if (raiseAmount < toCall) return false; // Must at least call
-      player.chips -= raiseAmount;
       const newBet = player.currentBet + raiseAmount;
+      // NL Hold'em rule: a raise must bring the total bet to at least
+      // highestBet + minRaise (the size of the last raise or the big blind).
+      // If the player cannot meet the minimum, they must use all_in instead.
+      if (newBet < highestBet + game.minRaise) return false;
+      player.chips -= raiseAmount;
       const raiseOver = newBet - highestBet;
-      if (raiseOver > 0) game.minRaise = Math.max(game.minRaise, raiseOver);
+      game.minRaise = Math.max(game.minRaise, raiseOver);
       player.currentBet = newBet;
       player.totalBetThisRound += raiseAmount;
       game.pot += raiseAmount;
       if (player.chips === 0) player.isAllIn = true;
-      // Reset hasActed for others (they need to respond to raise)
+      // Reset hasActed for others (they need to respond to the raise)
       for (const p of game.players) {
         if (p.agentId !== agentId && !p.hasFolded && !p.isAllIn) {
           p.hasActed = false;
@@ -303,11 +310,22 @@ export function processAction(game: GameState, agentId: string, action: PlayerAc
       const newBet = player.currentBet + allInAmount;
       if (newBet > highestBet) {
         const raiseOver = newBet - highestBet;
-        game.minRaise = Math.max(game.minRaise, raiseOver);
-        for (const p of game.players) {
-          if (p.agentId !== agentId && !p.hasFolded && !p.isAllIn) {
-            p.hasActed = false;
+        // NL Hold'em rule: a short-stack all-in for LESS than the minimum raise
+        // is a "partial raise" — it does NOT reopen the action for players who
+        // have already acted in this betting round.  Only a full raise (raiseOver
+        // >= minRaise) reopens action.
+        const isFullRaise = raiseOver >= game.minRaise;
+        if (isFullRaise) {
+          game.minRaise = raiseOver; // new minimum raise is the size of this raise
+          for (const p of game.players) {
+            if (p.agentId !== agentId && !p.hasFolded && !p.isAllIn) {
+              p.hasActed = false;
+            }
           }
+        } else {
+          // Partial raise: update minRaise only if it enlarges it (shouldn't
+          // happen in practice, but be safe), and do NOT reset hasActed.
+          game.minRaise = Math.max(game.minRaise, raiseOver);
         }
       }
       player.chips = 0;
