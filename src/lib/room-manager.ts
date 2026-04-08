@@ -109,7 +109,7 @@ const STALE_PLAYER_MS = 5 * 60 * 1000; // 5 minutes without interaction → ghos
 const LONE_PLAYER_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes alone → return chips and remove
 
 // ─── Showdown delay (ms before next hand starts) ────────────────────────────
-const SHOWDOWN_DELAY_MS = 3_000;
+const SHOWDOWN_DELAY_MS = 8_000;
 
 // ─── Chat (persisted to Supabase) ────────────────────────────────────────────
 
