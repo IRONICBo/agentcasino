@@ -1,6 +1,6 @@
 'use client';
 
-import { ClientGameState, WinnerInfo, ShowdownHandInfo, LastHandResult, Card } from '@/lib/types';
+import { ClientGameState, WinnerInfo, ShowdownHandInfo, LastHandResult, Card, HandRank } from '@/lib/types';
 import { PlayingCard } from './PlayingCard';
 import { useState, useEffect, useRef } from 'react';
 
@@ -8,6 +8,50 @@ import { useState, useEffect, useRef } from 'react';
 function isCardInBest(card: Card, bestCards: Card[] | null): boolean {
   if (!bestCards) return false;
   return bestCards.some(bc => bc.rank === card.rank && bc.suit === card.suit);
+}
+
+/**
+ * Given a hand rank and the best 5 cards, return a Set of indices
+ * for the cards that form the core of the hand type.
+ * e.g. pair → 2 cards, three_of_a_kind → 3 cards, straight/flush → all 5
+ */
+function getHandCoreIndices(rank: HandRank | string, cards: Card[]): Set<number> {
+  if (!cards || cards.length === 0) return new Set();
+
+  // These hands use all 5 cards
+  if (['straight', 'flush', 'full_house', 'straight_flush', 'royal_flush'].includes(rank)) {
+    return new Set(cards.map((_, i) => i));
+  }
+
+  // Count ranks to find groups
+  const rankCounts = new Map<string, number[]>();
+  cards.forEach((c, i) => {
+    const indices = rankCounts.get(c.rank) || [];
+    indices.push(i);
+    rankCounts.set(c.rank, indices);
+  });
+
+  const groups = [...rankCounts.values()].sort((a, b) => b.length - a.length);
+
+  switch (rank) {
+    case 'four_of_a_kind':
+      // The 4 matching cards
+      return new Set(groups.find(g => g.length === 4) || []);
+    case 'three_of_a_kind':
+      // The 3 matching cards
+      return new Set(groups.find(g => g.length === 3) || []);
+    case 'two_pair':
+      // Both pairs (4 cards)
+      return new Set(groups.filter(g => g.length === 2).flat());
+    case 'pair':
+      // The 2 matching cards
+      return new Set(groups.find(g => g.length === 2) || []);
+    case 'high_card':
+      // Just the highest card (index 0, cards are sorted descending)
+      return new Set([0]);
+    default:
+      return new Set();
+  }
 }
 
 const HIGHLIGHT_DURATION_MS = 5000;
@@ -21,6 +65,7 @@ type Entry = {
   agentId: string;
   name: string;
   hand: string;
+  handRank: string;
   handValue: number;
   bestCards: ClientGameState['players'][0]['holeCards'];
   holeCards: ClientGameState['players'][0]['holeCards'];
@@ -59,10 +104,15 @@ function buildShowdownEntries(
       ? (w!.hand?.cards ?? null)
       : (sdHand?.hand?.cards ?? null);
 
+    const handRank = isWinner
+      ? (w!.hand?.rank ?? '')
+      : (sdHand?.hand?.rank ?? '');
+
     entries.push({
       agentId: p.agentId,
       name: p.name,
       hand: handDesc,
+      handRank,
       handValue,
       bestCards,
       holeCards: p.holeCards,
@@ -170,11 +220,16 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
               )}
             </div>
 
-            {/* Hole cards — highlight cards that are part of the best hand */}
+            {/* Hole cards — highlight if card is a core part of the hand */}
             <div className="flex gap-1 shrink-0">
-              {entry.holeCards ? entry.holeCards.map((card, ci) => (
-                <PlayingCard key={ci} card={card} small dealDelay={0} highlighted={isCardInBest(card, entry.bestCards)} />
-              )) : (
+              {entry.holeCards ? (() => {
+                const coreIndices = entry.bestCards ? getHandCoreIndices(entry.handRank, entry.bestCards) : new Set<number>();
+                const coreCards = entry.bestCards ? [...coreIndices].map(i => entry.bestCards![i]) : [];
+                return entry.holeCards!.map((card, ci) => {
+                  const isCoreCard = coreCards.some(cc => cc.rank === card.rank && cc.suit === card.suit);
+                  return <PlayingCard key={ci} card={card} small dealDelay={0} highlighted={isCoreCard} />;
+                });
+              })() : (
                 <div className="flex gap-1">
                   <PlayingCard faceDown small dealDelay={0} />
                   <PlayingCard faceDown small dealDelay={0} />
@@ -229,14 +284,17 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
                 )}
               </div>
 
-              {/* Best 5 cards — highlighted with gold border */}
-              {entry.bestCards && entry.bestCards.length > 0 && (
-                <div className="flex gap-0.5 mt-1.5">
-                  {entry.bestCards.map((card, ci) => (
-                    <PlayingCard key={ci} card={card} size="xs" dealDelay={ci * 60} highlighted />
-                  ))}
-                </div>
-              )}
+              {/* Best 5 cards — core hand cards highlighted */}
+              {entry.bestCards && entry.bestCards.length > 0 && (() => {
+                const coreIndices = getHandCoreIndices(entry.handRank, entry.bestCards);
+                return (
+                  <div className="flex gap-0.5 mt-1.5">
+                    {entry.bestCards.map((card, ci) => (
+                      <PlayingCard key={ci} card={card} size="xs" dealDelay={ci * 60} highlighted={coreIndices.has(ci)} />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         ))}
