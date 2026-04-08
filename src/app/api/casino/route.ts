@@ -494,9 +494,8 @@ export async function POST(req: NextRequest) {
       const room = await getRoom(body.room_id);
       if (room?.game?.phase === 'showdown' && room.game.winners) {
         const winners = room.game.winners;
-        // Persist game result to Supabase (awaited — Vercel must not terminate
-        // before this write lands).
-        await recordGame({
+        // Persist game result to Supabase
+        recordGame({
           roomId:     body.room_id,
           roomName:   room.name,
           categoryId: room.categoryId,
@@ -505,7 +504,7 @@ export async function POST(req: NextRequest) {
           pot:        winners.reduce((s: number, w: any) => s + w.amount, 0),
           players:    room.game.players,
           winners,
-          startedAt:  (room.game as any)?._handStartedAt ?? Date.now(),
+          startedAt:  room.createdAt,
         });
 
         // _nextHandAt is set inside handleAction; next poll will auto-advance
