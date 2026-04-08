@@ -1,8 +1,14 @@
 'use client';
 
-import { ClientGameState, WinnerInfo, ShowdownHandInfo, LastHandResult } from '@/lib/types';
+import { ClientGameState, WinnerInfo, ShowdownHandInfo, LastHandResult, Card } from '@/lib/types';
 import { PlayingCard } from './PlayingCard';
 import { useState, useEffect, useRef } from 'react';
+
+/** Check if a card is part of the best-5 hand */
+function isCardInBest(card: Card, bestCards: Card[] | null): boolean {
+  if (!bestCards) return false;
+  return bestCards.some(bc => bc.rank === card.rank && bc.suit === card.suit);
+}
 
 const HIGHLIGHT_DURATION_MS = 5000;
 
@@ -164,10 +170,10 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
               )}
             </div>
 
-            {/* Hole cards */}
+            {/* Hole cards — highlight cards that are part of the best hand */}
             <div className="flex gap-1 shrink-0">
               {entry.holeCards ? entry.holeCards.map((card, ci) => (
-                <PlayingCard key={ci} card={card} small dealDelay={0} />
+                <PlayingCard key={ci} card={card} small dealDelay={0} highlighted={isCardInBest(card, entry.bestCards)} />
               )) : (
                 <div className="flex gap-1">
                   <PlayingCard faceDown small dealDelay={0} />
@@ -223,11 +229,11 @@ export function HandRankings({ gameState }: { gameState: ClientGameState }) {
                 )}
               </div>
 
-              {/* Best 5 cards — show for ALL players during highlight */}
+              {/* Best 5 cards — highlighted with gold border */}
               {entry.bestCards && entry.bestCards.length > 0 && (
                 <div className="flex gap-0.5 mt-1.5">
                   {entry.bestCards.map((card, ci) => (
-                    <PlayingCard key={ci} card={card} size="xs" dealDelay={ci * 60} />
+                    <PlayingCard key={ci} card={card} size="xs" dealDelay={ci * 60} highlighted />
                   ))}
                 </div>
               )}

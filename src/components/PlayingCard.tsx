@@ -10,11 +10,11 @@ const suitColor: Record<string, string> = {
 };
 
 export function PlayingCard({
-  card, faceDown, small, size, className = '', dealDelay = 0,
+  card, faceDown, small, size, className = '', dealDelay = 0, highlighted = false,
 }: {
   card?: Card | null; faceDown?: boolean; small?: boolean;
   size?: 'xs' | 'sm' | 'md';
-  className?: string; dealDelay?: number;
+  className?: string; dealDelay?: number; highlighted?: boolean;
 }) {
   const isXs = size === 'xs';
   const isSm = size === 'sm' || small;
@@ -62,8 +62,10 @@ export function PlayingCard({
       style={{
         width: W, height: H, borderRadius: R, flexShrink: 0,
         background: '#fff',
-        border: '1px solid #d0d0d0',
-        boxShadow: '1px 3px 10px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.15)',
+        border: highlighted ? '2px solid #d4af37' : '1px solid #d0d0d0',
+        boxShadow: highlighted
+          ? '0 0 8px rgba(212,175,55,0.6), 1px 3px 10px rgba(0,0,0,0.45)'
+          : '1px 3px 10px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.15)',
         position: 'relative', overflow: 'hidden',
         userSelect: 'none',
         animationDelay: `${dealDelay}ms`,
