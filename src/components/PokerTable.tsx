@@ -23,6 +23,17 @@ function seatCoords(totalPlayers: number): [number, number][] {
   return coords;
 }
 
+// Consistent color per agent name (shared with PlayerSeat)
+const AVATAR_COLORS = [
+  '#c0392b','#e74c3c','#9b59b6','#8e44ad',
+  '#2471a3','#1a5276','#148f77','#117a65',
+  '#d35400','#ca6f1e','#1e8449','#922b21',
+];
+function avatarColor(name: string): string {
+  const idx = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[idx];
+}
+
 const phaseLabels: Record<string, string> = {
   waiting: 'WAITING', preflop: 'PRE-FLOP', flop: 'FLOP',
   turn: 'TURN', river: 'RIVER', showdown: 'SHOWDOWN',
@@ -185,6 +196,9 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
     }
   }, [gameState.pot]);
 
+  const activePlayers = gameState.players.filter(p => !p.isWaiting);
+  const waitingPlayers = gameState.players.filter(p => p.isWaiting);
+
   const myPlayer = gameState.players.find(p => p.agentId === myAgentId);
   const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.agentId === myAgentId;
   const highestBet = Math.max(...gameState.players.map(p => p.currentBet), 0);
@@ -345,10 +359,12 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
         </div>
       </div>
 
-      {/* ── Player seats ── */}
-      {gameState.players.map((player, idx) => {
-        const seats = seatCoords(gameState.players.length);
+      {/* ── Player seats (active only) ── */}
+      {activePlayers.map((player, idx) => {
+        const seats = seatCoords(activePlayers.length);
         const [top, left] = seats[idx] ?? seats[0];
+        // Map back to original index for dealer/blind detection
+        const origIdx = gameState.players.indexOf(player);
         return (
           <div
             key={player.agentId}
@@ -362,8 +378,8 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
               player={player}
               isCurrentTurn={gameState.players[gameState.currentPlayerIndex]?.agentId === player.agentId}
               isDealer={gameState.players[gameState.dealerIndex]?.agentId === player.agentId}
-              isSmallBlind={idx === sbIdx}
-              isBigBlind={idx === bbIdx}
+              isSmallBlind={origIdx === sbIdx}
+              isBigBlind={origIdx === bbIdx}
               phase={gameState.phase}
             />
           </div>
@@ -502,6 +518,45 @@ export function PokerTable({ gameState, myAgentId, onAction }: PokerTableProps) 
               ALL IN
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Waiting area ── */}
+      {waitingPlayers.length > 0 && (
+        <div style={{
+          position: 'absolute', bottom: -110, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 5, display: 'flex', alignItems: 'center', gap: 16,
+        }}>
+          <span style={{
+            fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)',
+            fontFamily: 'monospace', letterSpacing: '0.12em', textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+          }}>
+            WAITING
+          </span>
+          {waitingPlayers.map(player => (
+            <div key={player.agentId} style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 10, padding: '6px 12px',
+            }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%',
+                background: `radial-gradient(circle at 35% 35%, ${avatarColor(player.name)}dd, ${avatarColor(player.name)}88)`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 9, color: '#fff', fontWeight: 700,
+              }}>
+                {player.name.replace(/[_-]/g, ' ').split(' ').map(p => p[0] ?? '').join('').toUpperCase().slice(0, 2) || '?'}
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                {player.name}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#2ecc71', fontFamily: 'monospace' }}>
+                {formatAmount(player.chips)}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

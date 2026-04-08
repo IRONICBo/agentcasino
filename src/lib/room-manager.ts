@@ -1146,6 +1146,7 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
       hasActed: p.hasActed,
       isAllIn: p.isAllIn,
       isConnected: p.isConnected && (Date.now() - (p.lastSeenAt ?? 0)) < 60_000,
+      isWaiting: game.phase !== 'waiting' && game.phase !== 'showdown' && p.holeCards.length === 0,
       winProbability: isSpectator ? (equity?.get(p.agentId) ?? null) : null,
     };
   });
@@ -1236,6 +1237,7 @@ async function broadcastSpectatorState(roomId: string, room: ExtendedRoom): Prom
       hasActed: p.hasActed,
       isAllIn: p.isAllIn,
       isConnected: p.isConnected && (now - (p.lastSeenAt ?? 0)) < 60_000,
+      isWaiting: game.phase !== 'waiting' && game.phase !== 'showdown' && p.holeCards.length === 0,
       winProbability: equity?.get(p.agentId) ?? null,
     })),
     communityCards: game.communityCards,
