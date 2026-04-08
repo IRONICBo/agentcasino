@@ -9,7 +9,7 @@ import {
   loadAgentChipsBatch,
 } from './casino-db';
 import { calculateEquity } from './equity';
-import { flushPendingStats, resetHandTrackingDeltas, hasHandTracking, trackHandStart } from './stats';
+import { flushGameStats } from './stats';
 import { supabase } from './supabase';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
@@ -364,7 +364,7 @@ export async function enforceTimeoutForRoom(roomId: string): Promise<void> {
         await addChipsAtomic(result.pendingChipReturn.agentId, result.pendingChipReturn.amount);
       }
       // Flush stats accumulated by auto-fold/hand-end inside enforceTimeout
-      await flushPendingStats();
+      if (room.game) await flushGameStats(room.game);
     }
     result = enforceTimeout(room);
   }
@@ -577,27 +577,6 @@ export async function handleAction(
   const result = await saveWithRetry(roomId, async (room) => {
     if (!room.game) return { game: null, error: 'No active game' };
 
-    // Lazy-init hand tracking if not present (cold-start / cross-instance routing).
-    // Game state is loaded from DB so we have correct player list and blind positions.
-    if (room.game.id && room.game.phase !== 'waiting' && room.game.phase !== 'showdown'
-        && !hasHandTracking(room.game.id)) {
-      const nPlayers = room.game.players.length;
-      const sbIdx = nPlayers === 2
-        ? room.game.dealerIndex
-        : (room.game.dealerIndex + 1) % nPlayers;
-      const bbIdx = (sbIdx + 1) % nPlayers;
-      trackHandStart(
-        room.game.id,
-        room.game.players.map(p => p.agentId),
-        sbIdx,
-        bbIdx,
-      );
-    }
-
-    // Reset stat deltas so version-conflict retries don't double-accumulate.
-    // Must come before enforceTimeout (which may auto-fold via processAction).
-    resetHandTrackingDeltas(room.game.id);
-
     // Enforce timeout before processing action
     await enforceTimeout(room);
 
@@ -643,11 +622,11 @@ export async function handleAction(
 
   if (!result.success) return { error: result.error || 'Action failed', showdown: null };
 
-  // Flush any pending stats increments to DB (from trackHandEnd)
-  await flushPendingStats();
-
   // Capture showdown snapshot from the just-saved state (before any tryStartNextHand can overwrite it)
   const game = result.room?.game;
+
+  // Flush stats from game._pendingStatsFlush to DB (set by finalizeHandStats inside processAction)
+  if (game) await flushGameStats(game);
   let showdown: ShowdownSnapshot | null = null;
   if (game?.phase === 'showdown' && game.winners) {
     showdown = {
@@ -795,7 +774,7 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
       await addChipsAtomic(agentId, amount);
     }
     // Flush any pending stats from the previous hand
-    await flushPendingStats();
+    if (result.room?.game) await flushGameStats(result.room.game);
   }
   return result.success;
 }

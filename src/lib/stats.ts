@@ -1,23 +1,23 @@
 /**
  * Behavioral metrics — VPIP, PFR, AF, WTSD, W$SD, C-Bet.
  *
- * DB-first architecture: per-hand deltas are accumulated in transient memory,
- * then flushed to Supabase via atomic RPC at hand end. No persistent in-memory state.
+ * Game-state architecture: tracking state lives in game._stats (persisted in
+ * game_json via Supabase), so it survives cross-instance routing on Vercel.
+ * At hand end, accumulated deltas are flushed to casino_agents via atomic RPC.
  */
 
 import type { PlayerAction } from './types';
 import { incrementAgentStats, loadAgentStats, loadAllAgentStats } from './casino-db';
 
 // ---------------------------------------------------------------------------
-// Per-hand transient state (cleared after hand resolves)
+// Per-hand stats — stored in game._stats (part of game_json in DB)
 // ---------------------------------------------------------------------------
 
-interface PerAgentHandState {
+export interface PerAgentStats {
   vpip: boolean;
   pfr: boolean;
-  inHand: boolean;  // hasn't folded yet
+  inHand: boolean;
   seenFlop: boolean;
-  // Delta accumulators for this hand
   vpipDelta: number;
   pfrDelta: number;
   aggressiveDelta: number;
@@ -26,66 +26,52 @@ interface PerAgentHandState {
   cbetMadeDelta: number;
 }
 
-interface HandTracking {
+export interface GameHandStats {
   agentIds: string[];
   smallBlindId: string;
   bigBlindId: string;
   preflopAggressorId: string | null;
-  agents: Map<string, PerAgentHandState>;
+  agents: Record<string, PerAgentStats>;
 }
 
-// Transient per-hand tracking — OK in memory (only lives during one hand)
-const g = globalThis as any;
-if (!g.__casino_hand_tracking) g.__casino_hand_tracking = new Map<string, HandTracking>();
-const handTracking: Map<string, HandTracking> = g.__casino_hand_tracking;
-
-// Pending stats flush promise from last trackHandEnd
-let _pendingStatsFlush: Promise<void> | null = null;
-
 // ---------------------------------------------------------------------------
-// Tracking hooks — called from poker-engine
+// Tracking functions — operate on game._stats (persisted in game_json)
 // ---------------------------------------------------------------------------
 
-/**
- * Called when a new hand starts.
- * NOTE: Does NOT increment games_played — that's handled atomically by recordGame().
- */
-export function trackHandStart(
-  handId: string,
+/** Initialize stats tracking for a new hand. Stored in game._stats. */
+export function initHandStats(
+  game: any,
   agentIds: string[],
   sbIdx: number,
   bbIdx: number,
 ): void {
-  const tracking: HandTracking = {
+  const agents: Record<string, PerAgentStats> = {};
+  for (const id of agentIds) {
+    agents[id] = {
+      vpip: false, pfr: false, inHand: true, seenFlop: false,
+      vpipDelta: 0, pfrDelta: 0, aggressiveDelta: 0, passiveDelta: 0,
+      cbetOpportunityDelta: 0, cbetMadeDelta: 0,
+    };
+  }
+  game._stats = {
     agentIds,
     smallBlindId: agentIds[sbIdx] ?? '',
     bigBlindId: agentIds[bbIdx] ?? '',
     preflopAggressorId: null,
-    agents: new Map(),
-  };
-  for (const id of agentIds) {
-    tracking.agents.set(id, {
-      vpip: false, pfr: false, inHand: true, seenFlop: false,
-      vpipDelta: 0, pfrDelta: 0, aggressiveDelta: 0, passiveDelta: 0,
-      cbetOpportunityDelta: 0, cbetMadeDelta: 0,
-    });
-  }
-  handTracking.set(handId, tracking);
+    agents,
+  } as GameHandStats;
 }
 
-/**
- * Called after each player action in poker-engine.processAction.
- * Accumulates deltas in the per-hand transient state.
- */
-export function trackAction(
-  handId: string,
+/** Record an action in the game stats. Reads/writes game._stats. */
+export function recordAction(
+  game: any,
   agentId: string,
   action: PlayerAction,
   phase: string,
 ): void {
-  const h = handTracking.get(handId);
+  const h: GameHandStats | undefined = game._stats;
   if (!h) return;
-  const a = h.agents.get(agentId);
+  const a = h.agents[agentId];
   if (!a) return;
 
   if (phase === 'preflop') {
@@ -138,27 +124,24 @@ export function trackAction(
 }
 
 /**
- * Called when a hand ends. Flushes accumulated deltas to DB via atomic RPC.
- * Stores the flush promise — call flushPendingStats() to await it.
+ * Compute final stats at hand end and store flush instructions in game._pendingStatsFlush.
+ * Does NOT do DB writes (those happen after save succeeds in room-manager).
  */
-export function trackHandEnd(
-  handId: string,
+export function finalizeHandStats(
+  game: any,
   winnerIds: string[],
   atShowdown: boolean,
 ): void {
-  const h = handTracking.get(handId);
+  const h: GameHandStats | undefined = game._stats;
   if (!h) return;
 
-  // Build per-agent flush calls
-  const flushCalls: Promise<void>[] = [];
+  const pending: Array<{ agentId: string; deltas: Parameters<typeof incrementAgentStats>[1] }> = [];
 
   for (const id of h.agentIds) {
-    const a = h.agents.get(id);
+    const a = h.agents[id];
     if (!a) continue;
 
     const isWinner = winnerIds.includes(id);
-
-    // Add showdown deltas
     let showdownDelta = 0;
     let showdownWinDelta = 0;
     if (atShowdown && a.inHand) {
@@ -166,64 +149,35 @@ export function trackHandEnd(
       if (isWinner) showdownWinDelta = 1;
     }
 
-    flushCalls.push(incrementAgentStats(id, {
-      isWinner,
-      vpipHands: a.vpipDelta,
-      pfrHands: a.pfrDelta,
-      aggressiveActions: a.aggressiveDelta,
-      passiveActions: a.passiveDelta,
-      showdownHands: showdownDelta,
-      showdownWins: showdownWinDelta,
-      cbetOpportunities: a.cbetOpportunityDelta,
-      cbetMade: a.cbetMadeDelta,
-    }));
+    pending.push({
+      agentId: id,
+      deltas: {
+        isWinner,
+        vpipHands: a.vpipDelta,
+        pfrHands: a.pfrDelta,
+        aggressiveActions: a.aggressiveDelta,
+        passiveActions: a.passiveDelta,
+        showdownHands: showdownDelta,
+        showdownWins: showdownWinDelta,
+        cbetOpportunities: a.cbetOpportunityDelta,
+        cbetMade: a.cbetMadeDelta,
+      },
+    });
   }
 
-  handTracking.delete(handId);
-
-  // Store the flush promise for the caller to await
-  _pendingStatsFlush = Promise.all(flushCalls).then(() => {});
+  game._pendingStatsFlush = pending;
 }
 
 /**
- * Reset all delta accumulators for a hand before a retry attempt.
- * Call at the top of saveWithRetry's buildState callback so version-conflict
- * retries don't double-accumulate actions in the handTracking map.
- *
- * Resets: all numeric deltas, boolean VPIP/PFR guards, seenFlop gate, preflopAggressorId.
- * Does NOT reset: inHand (reflects fold state — replayed by processAction on retry).
+ * Flush pending stats from game._pendingStatsFlush to DB via atomic RPC.
+ * Call after saveWithRetry succeeds.
  */
-export function resetHandTrackingDeltas(handId: string): void {
-  const h = handTracking.get(handId);
-  if (!h) return;
-  h.preflopAggressorId = null;
-  for (const a of h.agents.values()) {
-    a.vpip = false;
-    a.vpipDelta = 0;
-    a.pfr = false;
-    a.pfrDelta = 0;
-    a.seenFlop = false;
-    a.aggressiveDelta = 0;
-    a.passiveDelta = 0;
-    a.cbetOpportunityDelta = 0;
-    a.cbetMadeDelta = 0;
-  }
-}
+export async function flushGameStats(game: any): Promise<void> {
+  const pending: Array<{ agentId: string; deltas: Parameters<typeof incrementAgentStats>[1] }> | undefined = game?._pendingStatsFlush;
+  if (!pending || pending.length === 0) return;
 
-/** Check if hand tracking is initialized for a given handId. */
-export function hasHandTracking(handId: string): boolean {
-  return handTracking.has(handId);
-}
-
-/**
- * Await the pending stats flush from the last trackHandEnd call.
- * Call this after saving game state to ensure stats are persisted.
- */
-export async function flushPendingStats(): Promise<void> {
-  if (_pendingStatsFlush) {
-    await _pendingStatsFlush;
-    _pendingStatsFlush = null;
-  }
+  await Promise.all(pending.map(p => incrementAgentStats(p.agentId, p.deltas)));
+  delete game._pendingStatsFlush;
 }
 
 // ---------------------------------------------------------------------------

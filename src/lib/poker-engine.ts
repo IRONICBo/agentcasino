@@ -3,7 +3,7 @@ import { Card, GameState, GamePhase, Player, PlayerAction, WinnerInfo, SidePot, 
 import { createDeck } from './deck';
 import { evaluateHand, compareHands } from './hand-evaluator';
 import { commitSeed, generateFairDeck } from './fairness';
-import { trackHandStart, trackAction, trackHandEnd } from './stats';
+import { initHandStats, recordAction, finalizeHandStats } from './stats';
 
 export function createGame(smallBlind: number, bigBlind: number): GameState {
   return {
@@ -176,7 +176,7 @@ export function startNewHand(game: GameState, roomId?: string, roomName?: string
   };
 
   // Stats: track hand start
-  trackHandStart(handId, game.players.map(p => p.agentId), sbIdx, bbIdx);
+  initHandStats(game, game.players.map(p => p.agentId), sbIdx, bbIdx);
 
   game.minRaise = game.bigBlind;
 
@@ -327,7 +327,7 @@ export function processAction(game: GameState, agentId: string, action: PlayerAc
   game.lastAction = { agentId, action, amount };
 
   // Stats tracking
-  trackAction(game.id, agentId, action, game.phase);
+  recordAction(game, agentId, action, game.phase);
 
   // Check if only one player remains
   const activePlayers = game.players.filter(p => !p.hasFolded);
@@ -445,7 +445,7 @@ function awardPotToLastPlayer(game: GameState, winner: Player): void {
     : null;
 
   snapshotLastHand(game);
-  trackHandEnd(game.id, [winner.agentId], false);
+  finalizeHandStats(game, [winner.agentId], false);
 }
 
 function resolveShowdown(game: GameState): void {
@@ -501,7 +501,7 @@ function resolveShowdown(game: GameState): void {
   }));
 
   snapshotLastHand(game);
-  trackHandEnd(game.id, winners.map(w => w.agentId), true);
+  finalizeHandStats(game, winners.map(w => w.agentId), true);
 }
 
 function calculateSidePots(game: GameState): SidePot[] {
