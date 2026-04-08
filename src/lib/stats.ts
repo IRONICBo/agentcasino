@@ -186,6 +186,31 @@ export function trackHandEnd(
 }
 
 /**
+ * Reset all delta accumulators for a hand before a retry attempt.
+ * Call at the top of saveWithRetry's buildState callback so version-conflict
+ * retries don't double-accumulate actions in the handTracking map.
+ *
+ * Resets: all numeric deltas, boolean VPIP/PFR guards, seenFlop gate, preflopAggressorId.
+ * Does NOT reset: inHand (reflects fold state — replayed by processAction on retry).
+ */
+export function resetHandTrackingDeltas(handId: string): void {
+  const h = handTracking.get(handId);
+  if (!h) return;
+  h.preflopAggressorId = null;
+  for (const a of h.agents.values()) {
+    a.vpip = false;
+    a.vpipDelta = 0;
+    a.pfr = false;
+    a.pfrDelta = 0;
+    a.seenFlop = false;
+    a.aggressiveDelta = 0;
+    a.passiveDelta = 0;
+    a.cbetOpportunityDelta = 0;
+    a.cbetMadeDelta = 0;
+  }
+}
+
+/**
  * Await the pending stats flush from the last trackHandEnd call.
  * Call this after saving game state to ensure stats are persisted.
  */

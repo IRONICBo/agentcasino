@@ -9,7 +9,7 @@ import {
   loadAgentChipsBatch,
 } from './casino-db';
 import { calculateEquity } from './equity';
-import { flushPendingStats } from './stats';
+import { flushPendingStats, resetHandTrackingDeltas } from './stats';
 import { supabase } from './supabase';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
@@ -363,6 +363,8 @@ export async function enforceTimeoutForRoom(roomId: string): Promise<void> {
       if (result.pendingChipReturn) {
         await addChipsAtomic(result.pendingChipReturn.agentId, result.pendingChipReturn.amount);
       }
+      // Flush stats accumulated by auto-fold/hand-end inside enforceTimeout
+      await flushPendingStats();
     }
     result = enforceTimeout(room);
   }
@@ -567,6 +569,10 @@ export async function handleAction(
   const result = await saveWithRetry(roomId, async (room) => {
     if (!room.game) return { game: null, error: 'No active game' };
 
+    // Reset stat deltas so version-conflict retries don't double-accumulate.
+    // Must come before enforceTimeout (which may auto-fold via processAction).
+    resetHandTrackingDeltas(room.game.id);
+
     // Enforce timeout before processing action
     await enforceTimeout(room);
 
@@ -751,6 +757,8 @@ export async function tryStartNextHand(roomId: string): Promise<boolean> {
     for (const { agentId, amount } of pendingChipReturns) {
       await addChipsAtomic(agentId, amount);
     }
+    // Flush any pending stats from the previous hand
+    await flushPendingStats();
   }
   return result.success;
 }
