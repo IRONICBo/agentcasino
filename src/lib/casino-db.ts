@@ -113,13 +113,16 @@ export async function recordGame(record: GameRecord): Promise<void> {
   const playerRows = record.players.map(p => {
     const isWinner = record.winners.some(w => w.agentId === p.agentId);
     const winAmount = record.winners.find(w => w.agentId === p.agentId)?.amount ?? 0;
+    // totalBetThisRound accumulates across all streets; currentBet is reset to 0
+    // by advancePhase at the end of each street, so it is always 0 at showdown.
+    const totalIn = p.totalBetThisRound;
     return {
       game_id:    gameId,
       agent_id:   p.agentId,
       agent_name: p.name,
-      buy_in:     0,
+      buy_in:     totalIn,
       chips_end:  p.chips,
-      profit:     isWinner ? winAmount : -p.currentBet,
+      profit:     winAmount - totalIn,
       is_winner:  isWinner,
     };
   });

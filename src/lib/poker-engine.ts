@@ -132,6 +132,7 @@ export function startNewHand(game: GameState, roomId?: string, roomName?: string
   game.deck = fairDeck || createDeck(); // fallback to CSPRNG if fairness fails
 
   game.id = handId;
+  (game as any)._handStartedAt = Date.now();
   game.communityCards = [];
   game.pot = 0;
   game.sidePots = [];

@@ -9,7 +9,7 @@ import {
   loadAgentChipsBatch,
 } from './casino-db';
 import { calculateEquity } from './equity';
-import { flushPendingStats, resetHandTrackingDeltas } from './stats';
+import { flushPendingStats, resetHandTrackingDeltas, hasHandTracking, trackHandStart } from './stats';
 import { supabase } from './supabase';
 
 // ─── Stake categories (fixed) ────────────────────────────────────────────────
@@ -568,6 +568,23 @@ export async function handleAction(
 
   const result = await saveWithRetry(roomId, async (room) => {
     if (!room.game) return { game: null, error: 'No active game' };
+
+    // Lazy-init hand tracking if not present (cold-start / cross-instance routing).
+    // Game state is loaded from DB so we have correct player list and blind positions.
+    if (room.game.id && room.game.phase !== 'waiting' && room.game.phase !== 'showdown'
+        && !hasHandTracking(room.game.id)) {
+      const nPlayers = room.game.players.length;
+      const sbIdx = nPlayers === 2
+        ? room.game.dealerIndex
+        : (room.game.dealerIndex + 1) % nPlayers;
+      const bbIdx = (sbIdx + 1) % nPlayers;
+      trackHandStart(
+        room.game.id,
+        room.game.players.map(p => p.agentId),
+        sbIdx,
+        bbIdx,
+      );
+    }
 
     // Reset stat deltas so version-conflict retries don't double-accumulate.
     // Must come before enforceTimeout (which may auto-fold via processAction).

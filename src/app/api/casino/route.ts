@@ -495,7 +495,7 @@ export async function POST(req: NextRequest) {
       if (room?.game?.phase === 'showdown' && room.game.winners) {
         const winners = room.game.winners;
         // Persist game result to Supabase
-        recordGame({
+        await recordGame({
           roomId:     body.room_id,
           roomName:   room.name,
           categoryId: room.categoryId,
@@ -504,7 +504,7 @@ export async function POST(req: NextRequest) {
           pot:        winners.reduce((s: number, w: any) => s + w.amount, 0),
           players:    room.game.players,
           winners,
-          startedAt:  room.createdAt,
+          startedAt:  (room.game as any)?._handStartedAt ?? Date.now(),
         });
 
         // _nextHandAt is set inside handleAction; next poll will auto-advance

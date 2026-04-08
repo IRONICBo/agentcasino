@@ -210,6 +210,11 @@ export function resetHandTrackingDeltas(handId: string): void {
   }
 }
 
+/** Check if hand tracking is initialized for a given handId. */
+export function hasHandTracking(handId: string): boolean {
+  return handTracking.has(handId);
+}
+
 /**
  * Await the pending stats flush from the last trackHandEnd call.
  * Call this after saving game state to ensure stats are persisted.
