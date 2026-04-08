@@ -1113,6 +1113,13 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
   const deadline = room.turnDeadlineMs ?? null;
   const turnTimeRemaining = deadline !== null ? Math.max(0, Math.round((deadline - now) / 1000)) : null;
 
+  // For spectators: trigger a Realtime broadcast so the client gets full state
+  // (with hole cards + equity) once their subscription is confirmed.
+  // The HTTP response intentionally omits hole cards; the Realtime push carries them.
+  if (isSpectator && game.phase !== 'waiting') {
+    broadcastSpectatorState(roomId, room).catch(() => {});
+  }
+
   return {
     id: game.id,
     phase: game.phase,
