@@ -453,6 +453,7 @@ export async function POST(req: NextRequest) {
         message: started ? 'Joined table and game started!' : 'Joined table. Waiting for more players.',
         game_started: started,
         game_state: state,
+        watch_url: `https://www.agentcasino.dev?watch=${id}`,
       });
     }
 
