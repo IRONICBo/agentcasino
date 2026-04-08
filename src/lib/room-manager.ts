@@ -1058,39 +1058,25 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
   const handId = game.id;
 
   // ── Load hole cards from per-agent table ──
-  // Spectator + showdown: load all; Agent: load only own
+  // HTTP API: only load cards that this viewer is allowed to see.
+  // - At showdown: reveal all (everyone sees the result).
+  // - Active play: each agent sees only their own cards; spectators see none.
+  // Full spectator view (all cards + equity) is delivered via Supabase Realtime
+  // broadcast (broadcastSpectatorState), not through this HTTP path — that keeps
+  // the HTTP endpoint safe against playing agents polling as __spectator__.
   let holeCardsByAgent: Record<string, import('./types').Card[]> = {};
   if (handId && game.phase !== 'waiting') {
-    if (isSpectator || isShowdown) {
+    if (isShowdown) {
       holeCardsByAgent = await loadAllHoleCards(handId);
-    } else if (viewerAgentId) {
+    } else if (!isSpectator && viewerAgentId) {
       const myCards = await loadHoleCards(handId, viewerAgentId);
       if (myCards) holeCardsByAgent[viewerAgentId] = myCards;
     }
   }
 
-  // ── Equity: only for spectators (agents think for themselves) ──
-  let equity: Map<string, number> | null = null;
-  if (isSpectator && game.phase !== 'waiting' && game.phase !== 'showdown') {
-    const allCards = holeCardsByAgent;
-    const hasCards = Object.values(allCards).some(c => c.length === 2);
-    if (hasCards) {
-      const cached = equityCache.get(roomId);
-      if (cached && cached.version === room.stateVersion) {
-        equity = cached.equity;
-      } else {
-        equity = calculateEquity(
-          game.players.map(p => ({
-            agentId: p.agentId,
-            holeCards: allCards[p.agentId] ?? [],
-            hasFolded: p.hasFolded,
-          })),
-          game.communityCards,
-        );
-        equityCache.set(roomId, { version: room.stateVersion, equity });
-      }
-    }
-  }
+  // Equity is not exposed via the HTTP API path (agents think for themselves;
+  // spectator equity is pushed via broadcastSpectatorState → Supabase Realtime).
+  const equity: Map<string, number> | null = null;
 
   // ── Load wallet (off-table) chips for all players ──
   const walletChips = await loadAgentChipsBatch(game.players.map(p => p.agentId));
@@ -1099,14 +1085,11 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
   const players: ClientPlayer[] = game.players.map(p => {
     let cards: import('./types').Card[] | null = null;
 
-    if (isSpectator) {
-      // Spectator sees all cards
-      cards = holeCardsByAgent[p.agentId] ?? null;
-    } else if (isShowdown) {
+    if (isShowdown) {
       // Showdown: reveal ALL players' cards (including folded) for hand ranking display
       cards = holeCardsByAgent[p.agentId] ?? null;
-    } else if (p.agentId === viewerAgentId) {
-      // Agent sees only own cards
+    } else if (!isSpectator && p.agentId === viewerAgentId) {
+      // Agent sees only own cards during active play
       cards = holeCardsByAgent[p.agentId] ?? null;
     }
 
@@ -1122,7 +1105,7 @@ export async function getClientGameState(roomId: string, viewerAgentId: string):
       hasActed: p.hasActed,
       isAllIn: p.isAllIn,
       isConnected: p.isConnected && (Date.now() - (p.lastSeenAt ?? 0)) < 60_000,
-      winProbability: isSpectator ? (equity?.get(p.agentId) ?? null) : null,
+      winProbability: null,
     };
   });
 
