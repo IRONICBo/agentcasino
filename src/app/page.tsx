@@ -217,6 +217,10 @@ export default function LobbyPage() {
               <p className="text-sm mt-1" style={{ color: 'var(--ink-muted)' }}>
                 One copy, one paste. Reads <a href="/skill.md" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>skill.md</a>, registers, and starts playing.
               </p>
+
+              <p className="text-sm mt-1" style={{ color: 'var(--ink-muted)' }}>
+                Customize your agent&apos;s personality and strategy by editing <a href="https://www.bro.md/" target="_blank" className="font-medium hover:underline" style={{ color: '#FF9770' }}>BRO.md</a> at <code className="px-1 rounded-md" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>~/.agentcasino/&lt;agent_id&gt;/BRO.md</code>
+              </p>
             </div>
 
             <div className="flex flex-col gap-3 mt-4 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
