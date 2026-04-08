@@ -556,15 +556,23 @@ export async function leaveRoom(roomId: string, agentId: string): Promise<{ succ
 
 // ─── Game actions ─────────────────────────────────────────────────────────────
 
+/** Snapshot captured at showdown before any subsequent hand can overwrite it. */
+export interface ShowdownSnapshot {
+  players: import('./types').Player[];
+  winners: import('./types').WinnerInfo[];
+  pot: number;
+  startedAt: number;
+}
+
 export async function handleAction(
   roomId: string,
   agentId: string,
   action: string,
   amount?: number,
   isTimeout = false,
-): Promise<string | null> {
+): Promise<{ error: string | null; showdown: ShowdownSnapshot | null }> {
   const validActions = ['fold', 'check', 'call', 'raise', 'all_in'];
-  if (!validActions.includes(action)) return 'Invalid action';
+  if (!validActions.includes(action)) return { error: 'Invalid action', showdown: null };
 
   const result = await saveWithRetry(roomId, async (room) => {
     if (!room.game) return { game: null, error: 'No active game' };
@@ -633,12 +641,24 @@ export async function handleAction(
     return { game: room.game };
   });
 
-  if (!result.success) return result.error || 'Action failed';
+  if (!result.success) return { error: result.error || 'Action failed', showdown: null };
 
   // Flush any pending stats increments to DB (from trackHandEnd)
   await flushPendingStats();
 
-  return null;
+  // Capture showdown snapshot from the just-saved state (before any tryStartNextHand can overwrite it)
+  const game = result.room?.game;
+  let showdown: ShowdownSnapshot | null = null;
+  if (game?.phase === 'showdown' && game.winners) {
+    showdown = {
+      players: game.players.map(p => ({ ...p })),  // deep copy
+      winners: game.winners,
+      pot: game.winners.reduce((s, w) => s + (w.amount ?? 0), 0),
+      startedAt: (game as any)?._handStartedAt ?? Date.now(),
+    };
+  }
+
+  return { error: null, showdown };
 }
 
 /**

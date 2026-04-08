@@ -488,23 +488,22 @@ export async function POST(req: NextRequest) {
       // Keep write and read paths consistent before applying an action.
       await runRoomMaintenance(body.room_id);
 
-      const actionError = await handleAction(body.room_id, id, body.move, body.amount);
+      const { error: actionError, showdown } = await handleAction(body.room_id, id, body.move, body.amount);
       if (actionError) return err(actionError);
 
-      const room = await getRoom(body.room_id);
-      if (room?.game?.phase === 'showdown' && room.game.winners) {
-        const winners = room.game.winners;
-        // Persist game result to Supabase
+      if (showdown) {
+        const room = await getRoom(body.room_id);
+        // Persist game result using the snapshot captured at showdown (race-safe)
         await recordGame({
           roomId:     body.room_id,
-          roomName:   room.name,
-          categoryId: room.categoryId,
-          smallBlind: room.smallBlind,
-          bigBlind:   room.bigBlind,
-          pot:        winners.reduce((s: number, w: any) => s + w.amount, 0),
-          players:    room.game.players,
-          winners,
-          startedAt:  (room.game as any)?._handStartedAt ?? Date.now(),
+          roomName:   room?.name ?? '',
+          categoryId: room?.categoryId ?? '',
+          smallBlind: room?.smallBlind ?? 0,
+          bigBlind:   room?.bigBlind ?? 0,
+          pot:        showdown.pot,
+          players:    showdown.players,
+          winners:    showdown.winners,
+          startedAt:  showdown.startedAt,
         });
 
         // _nextHandAt is set inside handleAction; next poll will auto-advance
@@ -513,7 +512,7 @@ export async function POST(req: NextRequest) {
           move: body.move,
           amount: body.amount,
           result: 'showdown',
-          winners,
+          winners: showdown.winners,
           game_state: await getClientGameState(body.room_id, id),
         });
       }
