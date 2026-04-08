@@ -206,7 +206,7 @@ export function PlayerSeat({ player, isCurrentTurn, isDealer, isSmallBlind, isBi
           fontFamily: 'monospace', letterSpacing: '0.02em', marginTop: 2,
         }}>
           <span style={{ color: '#2ecc71' }}>{formatChips(player.chips)}</span>
-          {player.walletChips != null && (
+          {player.walletChips !== null && (
             <span style={{ color: 'rgba(255,255,255,0.35)' }}> / {formatChips(player.walletChips)}</span>
           )}
         </div>

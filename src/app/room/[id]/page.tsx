@@ -75,14 +75,7 @@ function RoomPageInner() {
             setGameState(payload as ClientGameState);
           }
         })
-        .subscribe((status) => {
-          // Once the subscription is live, fetch game state — the server will
-          // trigger a Realtime broadcast, which this channel will now receive
-          // (with hole cards + equity included).
-          if (status === 'SUBSCRIBED') {
-            fetchGameState();
-          }
-        });
+        .subscribe();
 
       // Slow fallback poll (every 10s) in case Realtime disconnects
       const fallback = setInterval(fetchGameState, 10_000);
